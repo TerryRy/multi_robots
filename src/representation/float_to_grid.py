@@ -90,8 +90,8 @@ def agent_to_gridmap(position, gridmap, resolution=1, destination_location=None,
         return (int(round(px)),int(round(py)))
     else: 
         sample_pool=[(int(px), int(py)),(int(px), int(py)+1),(int(px)+1, int(py)),(int(px)+1, int(py)+1)]
-        results = filter(gridmap.in_bounds, sample_pool)
-        results = filter(gridmap.passable, results)
+        results = list(filter(gridmap.in_bounds, sample_pool))
+        results = list(filter(gridmap.passable, results))
         if len(results)>0:
             return results[0]
         else:

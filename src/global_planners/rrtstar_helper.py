@@ -79,7 +79,7 @@ class JointState:
         try:
             return self.agents_state[agent_id]
         except Exception as e:
-            print "rrtstar_helper.py:", e
+            print("rrtstar_helper.py:", e)
 
     def __setitem__(self, agent_id, agent_state):
         """use agent id to set its state within the joint-state"""
@@ -201,7 +201,7 @@ def draw_circle(screen, color, center, radius = 5):
     try:
         pygame.draw.circle(screen, color, rectify_meter_to_pixel(center), radius, 0)
     except Exception as e:
-        print "marrt*.py: unable to draw point {}, {}".format(center, e)
+        print("marrt*.py: unable to draw point {}, {}".format(center, e))
 
 def draw_joint_state(screen, joint_state, color = None, radius = 5):
     for aid, state in joint_state.agents_state.items():
@@ -216,13 +216,13 @@ def pausable_interface(cmd = False):
     pygame.display.flip()
     paused = cmd
     if paused:
-        print "PAUSE searching ..."
+        print("PAUSE searching ...")
     while paused:
         for event in pygame.event.get():
             if event.type == KEYDOWN:
                 if event.key == pygame.K_p:
                     paused = not paused
-                    print "RESUME searching ..."
+                    print("RESUME searching ...")
                 elif event.key == pygame.K_q: # Q/q is pressed
                     exit()
                 # elif event.key == pygame.K_t:

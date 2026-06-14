@@ -35,7 +35,7 @@ class AgentStateMachine:
         Sigma = {perception, agent_information, server_command}
 
         Return:
-            a function type and a function to be called in q \in Q
+            a function type and a function to be called in q \\in Q
         """
         if self.is_mobile_state(agent.state):
             if agent.task.type == TaskType.GO_TO_LOADING_PORT or agent.task.type == TaskType.GO_TO_UNLOADING_PORT:

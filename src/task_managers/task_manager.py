@@ -33,8 +33,8 @@ class UnLoadingTask(Task):
 class TaskMananger(object):
     def __init__(self, environment, agents):
         self.agents = agents
-        self.loading_ports = environment.loading_ports.values()
-        self.unloading_ports = environment.unloading_ports.values()
+        self.loading_ports = list(environment.loading_ports.values())
+        self.unloading_ports = list(environment.unloading_ports.values())
 
     # perform task allocation for IDLE agents
     def next_loading_task(self, agent):

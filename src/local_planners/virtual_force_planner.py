@@ -5,7 +5,7 @@
 @brief : local planner based on virtual forces
 """
 from geometry import Vector, compute_direction, Point
-from local_planner import LocalPlanner
+from .local_planner import LocalPlanner
 from math import sqrt
 class VirtualForcePlanner(LocalPlanner):
     """

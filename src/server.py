@@ -18,8 +18,8 @@ class Server:
         
         self.task_manager = NaiveTaskManager(environment=environment, agents=agents)
         self.agents_state = {agent.id: dict() for agent in agents}
-        self.loading_ports = environment.loading_ports.values()
-        self.unloading_ports = environment.unloading_ports.values()
+        self.loading_ports = list(environment.loading_ports.values())
+        self.unloading_ports = list(environment.unloading_ports.values())
         self.longest_squared_distance = environment.width_in_meters * environment.width_in_meters + environment.height_in_meters * environment.height_in_meters
         
         self.multiagent_global_planners = []
@@ -54,7 +54,7 @@ class Server:
             if agent.id in ma_planner.agents.keys(): # find the ma_planner which in charge of current agent
                 solution_paths_dict = ma_planner.compute_path()
                 return solution_paths_dict[agent.id]
-        print "Cannot find a multiagent global planner which is in charge of agent {}".format(agent.id)
+        print("Cannot find a multiagent global planner which is in charge of agent {}".format(agent.id))
         return []
             
     def collect_agents_info(self, agents_dict):

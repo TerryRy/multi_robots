@@ -1,1 +1,1 @@
-import data_book_pb2
+from . import data_book_pb2

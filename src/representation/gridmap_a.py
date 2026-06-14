@@ -5,8 +5,8 @@
 from math import ceil, sqrt
 from geometry import Point
 from representation.gridmap import GridMap
-from queue import deque
-from sets import Set
+from collections import deque
+
 class GridmapWithNeighbors(GridMap):
     '''new functions for gridmap
     '''
@@ -42,7 +42,7 @@ class GridmapWithNeighbors(GridMap):
        For A* using, the cost should be same here because to_position is the neighbors of from position
     '''
     def available_list_from_location(self, start):
-        visited = Set()
+        visited = set()
         visiting = deque()
         visiting.appendleft(start)
         while visiting:
@@ -62,7 +62,7 @@ class GridmapWithNeighbors(GridMap):
         results = filter(self.in_bounds, results)
         results = filter(self.passable, results)
         results = filter(self.__get_coordinates, results)
-        index_list = map((lambda position: position[0]/self.resolution + self.width_in_meters * position[1]/self.resolution), results)
+        index_list = list(map((lambda position: position[0]/self.resolution + self.width_in_meters * position[1]/self.resolution), results))
         return index_list 
 
 

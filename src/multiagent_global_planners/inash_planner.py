@@ -179,12 +179,12 @@ class INashRRT(MultiAgentPlanner):
         '''end for debug'''
 
         self.server.refresh_agents_path(agents_point_path_dict)
-        print "INashRRT DONE in {} sec".format(time.time() - start_search_time)
+        print("INashRRT DONE in {} sec".format(time.time() - start_search_time))
         return agents_point_path_dict
     
     def terminate(self, time_elapsed, num_each_agent_states, agents_best_edge_path_dict):
         if time_elapsed >= INashRRT.report_time:
-            print "inash_planner*.py: already search for {} second".format(int(time_elapsed))
+            print("inash_planner*.py: already search for {} second".format(int(time_elapsed)))
             INashRRT.report_time = (int(time_elapsed) // 10)*10 + 10
 
         if all([len(path) for path in agents_best_edge_path_dict.values()]):
@@ -314,7 +314,7 @@ class INashRRT(MultiAgentPlanner):
                 check if there is any collision'''
             raise NotImplementedError
         else:
-            print "inash_planner.py: cannot find corresponding steering method in multi-agent free paths computation, do you implement one?"
+            print("inash_planner.py: cannot find corresponding steering method in multi-agent free paths computation, do you implement one?")
             raise NotImplementedError
         return True
 
@@ -331,7 +331,7 @@ class INashRRT(MultiAgentPlanner):
             if reachable:
                 to_state.add_in_edge(from_state, path_cost, time_cost, from_state_velocity, to_state_velocity)
         else:
-            print "inash_planner.py: cannot find corresponding steering function, do you implement it?"
+            print("inash_planner.py: cannot find corresponding steering function, do you implement it?")
             raise NotImplementedError
 
     def extend(self, states_list, sample_state, goal_state, radius, agent_abstraction):

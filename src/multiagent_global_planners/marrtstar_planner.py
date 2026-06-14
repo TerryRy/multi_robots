@@ -59,7 +59,7 @@ class MARRTStar(MultiAgentPlanner):
                 init_joint_state_dict[agent.id] = agent_init_state
                 goal_joint_state_dict[agent.id] = agent_goal_state
         except Exception as e:
-            print "marrtstar_planner.py: not all agents have destination, empty path is returned"
+            print("marrtstar_planner.py: not all agents have destination, empty path is returned")
             return None
 
         solution_paths_dict = self.grow_MARRTStar(JointState(init_joint_state_dict, 0), JointState(goal_joint_state_dict, POS_INF), all_agents_dict)
@@ -108,7 +108,7 @@ class MARRTStar(MultiAgentPlanner):
         joint_states_path = self.find_solution_path(goal_joint_state)
 
         solution_paths_dict = self.extract_paths_from_joint_states(joint_states_path)
-        print "MARRT* DONE in {} sec".format(time.time() - start_search_time)
+        print("MARRT* DONE in {} sec".format(time.time() - start_search_time))
         return solution_paths_dict
     
     def extract_paths_from_joint_states(self, joint_states_path):
@@ -123,7 +123,7 @@ class MARRTStar(MultiAgentPlanner):
 
     def terminate(self, time_elapsed, num_joint_states, new_joint_state, goal_joint_state):
         if time_elapsed >= MARRTStar.report_time:
-            print "marrt*.py: already search for {} second".format(int(time_elapsed))
+            print("marrt*.py: already search for {} second".format(int(time_elapsed)))
             MARRTStar.report_time = (int(time_elapsed) // 5)*5 + 5
 
         '''check whether wire goal-joint-state to new-joint-state is possible and gives lower cost'''

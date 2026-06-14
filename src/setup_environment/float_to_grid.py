@@ -60,8 +60,8 @@ class GridMapCalculator(object):
         int_x=int(px-0.5*int(centeroid))
         int_y=int(py-0.5*int(centeroid))
         sample_pool=[(int_x, int_y),(int_x+1, int_y),(int_x, int_y+1),(int_x+1, int_y+1)]
-        results = filter(gridmap.in_bounds, sample_pool)
-        results = filter(gridmap.passable, results)
+        results = list(filter(gridmap.in_bounds, sample_pool))
+        results = list(filter(gridmap.passable, results))
         if destination_location != None:
             results.sort(key = destination_location.distance)
         return results[0]

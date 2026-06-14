@@ -59,7 +59,7 @@ class SensorContactListener(b2ContactListener):
         is_detected, detected_object, radar = self.__get_radar_and_object(contact)
         if is_detected:
             if type(detected_object) == 'Agent':
-                print type(detected_object)
+                print(type(detected_object))
             radar.radar_lost_object(detected_object)
             
     '''This function is a filter to get the object which is not sensor '''

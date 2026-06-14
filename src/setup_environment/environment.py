@@ -10,7 +10,7 @@ from math import ceil, floor
 from geometry import Point, comptue_center_point
 from representation.gridmap_a import GridmapWithNeighbors
 from shape import Rectangle
-from queue import SimpleQueue
+from sim_queue import SimpleQueue
 from pygame import time
 import re
 from setup_environment.walls import Wall

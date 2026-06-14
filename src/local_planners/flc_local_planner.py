@@ -1,6 +1,6 @@
-from FLC_simulator import Environment, MLSHAgent
-from local_planner import LocalPlanner
-from rvo_planner import RVOPlanner
+from .FLC_simulator import Environment, MLSHAgent
+from .local_planner import LocalPlanner
+from .rvo_planner import RVOPlanner
 
 
 

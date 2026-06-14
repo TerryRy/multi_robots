@@ -10,7 +10,7 @@ from representation.gridmap import GridMap
 from task_managers.task_manager import Task, WaitingForOrderTask
 from collections import deque
 from math import cos, sin, pi, atan2
-from agent_state_machine import AgentStateMachine
+from .agent_state_machine import AgentStateMachine
 
 class SimulatedPerception:
     """ A simulated module emulating sensor and server updates
@@ -21,9 +21,9 @@ class SimulatedPerception:
     def __init__(self, simulated_agent, all_simulated_agents, all_ports):
         self.simulated_agent = simulated_agent
         self.all_ports = all_ports
-        self.other_simulated_agents = filter(
+        self.other_simulated_agents = list(filter(
                 lambda agent: agent.userData.id != simulated_agent.userData.id,
-                all_simulated_agents)
+                all_simulated_agents))
 
     """ Localisation module
     add noise if necessary
@@ -37,14 +37,14 @@ class SimulatedPerception:
     radius -- simulated radius of the lidar with the active range of 2 * pi
     """
     def other_agents_state_in_range_of(self, radius = 3):
-        return filter(
+        return list(filter(
             lambda agent:
                 self.simulated_agent.userData.position.distance(agent.userData.position) <= radius
-                , self.other_simulated_agents)
+                , self.other_simulated_agents))
     def ports_in_range_of(self, radius = 2):
-        return filter(lambda port:
+        return list(filter(lambda port:
             self.simulated_agent.userData.position.distance(port.userData.location) <= radius
-            , self.all_ports)
+            , self.all_ports))
 
 """Perception from sensor on agent only"""
 class Box2DPerception:
@@ -61,73 +61,73 @@ class Box2DPerception:
     def other_agents_state_in_range_of(self, radius = 3.0, angle = pi):
         reference_point = self.simulated_agent.userData.position
         reference_angle = self.simulated_agent.userData.angle
-        agents = filter(lambda agent: agent.userData.type == 'agent', self.detected_object)
-        agents_in_angle = filter(lambda agent: 
+        agents = list(filter(lambda agent: agent.userData.type == 'agent', self.detected_object))
+        agents_in_angle = list(filter(lambda agent: 
             abs(atan2(agent.position.y-reference_point.y, agent.position.x-reference_point.x)
-            -reference_angle) <= angle, agents)
-        return filter(
+            -reference_angle) <= angle, agents))
+        return list(filter(
             lambda agent:
                 self.simulated_agent.userData.position.distance(agent.position) <= radius
-                , agents_in_angle)    
+                , agents_in_angle))    
             
     def ports_in_range_of(self, radius = 2.0, angle = pi):
         reference_point = self.simulated_agent.userData.position
         reference_angle = self.simulated_agent.userData.angle
-        ports = filter(lambda port: port.userData.type == 'port', self.detected_object)
-        ports_in_angle = filter(lambda port: 
+        ports = list(filter(lambda port: port.userData.type == 'port', self.detected_object))
+        ports_in_angle = list(filter(lambda port: 
             abs(atan2(port.userData.location.y-reference_point.y, port.userData.location.x-reference_point.x)
-            -reference_angle) <= angle, ports)
-        return filter(lambda port:
+            -reference_angle) <= angle, ports))
+        return list(filter(lambda port:
             self.simulated_agent.userData.position.distance(port.position) <= radius
-            , ports_in_angle)
+            , ports_in_angle))
             
     def walls_in_range_of(self, radius = 2.0, angle = pi):
         reference_point = self.simulated_agent.userData.position
         reference_angle = self.simulated_agent.userData.angle
-        walls = filter(lambda wall: wall.userData.type == 'wall', self.detected_object)
-        walls_in_angle = filter(lambda wall: 
+        walls = list(filter(lambda wall: wall.userData.type == 'wall', self.detected_object))
+        walls_in_angle = list(filter(lambda wall: 
             abs(atan2(wall.userData.location.y-reference_point.y, wall.userData.location.x-reference_point.x)
-            -reference_angle) <= angle, walls)
-        return filter(lambda wall:
+            -reference_angle) <= angle, walls))
+        return list(filter(lambda wall:
             self.simulated_agent.userData.position.distance(wall.userData.location) <= radius
-            , walls_in_angle)
+            , walls_in_angle))
 
     def other_agents_state_in_collision_of(self, tolerrance = 2e-1, angle = pi):
         '''take both dimensions into consideration, if the distance between the minimum distance of two is smaller than a tolerance '''
         reference_point = self.simulated_agent.userData.position
         reference_angle = self.simulated_agent.userData.angle
-        agents = filter(lambda agent: agent.userData.type == 'agent', self.detected_object)
-        agents_in_angle = filter(lambda agent: 
+        agents = list(filter(lambda agent: agent.userData.type == 'agent', self.detected_object))
+        agents_in_angle = list(filter(lambda agent: 
             abs(atan2(agent.position.y-reference_point.y, agent.position.x-reference_point.x)
-            -reference_angle) <= angle, agents)
-        return filter(
+            -reference_angle) <= angle, agents))
+        return list(filter(
             lambda agent:
                 self.simulated_agent.userData.position.distance(agent.position) <= tolerrance + self.simulated_agent.userData.shape.get_radius() + agents_in_angle.userData.shape.get_radius()
-                , agents_in_angle)    
+                , agents_in_angle))    
             
     def ports_in_collision_of(self, tolerrance = 2e-1, angle = pi):
         reference_point = self.simulated_agent.userData.position
         reference_angle = self.simulated_agent.userData.angle
-        ports = filter(lambda port: port.userData.type == 'port', self.detected_object)
-        ports_in_angle = filter(lambda port: 
+        ports = list(filter(lambda port: port.userData.type == 'port', self.detected_object))
+        ports_in_angle = list(filter(lambda port: 
             abs(atan2(port.userData.location.y-reference_point.y, port.userData.location.x-reference_point.x)
-            -reference_angle) <= angle, ports)
-        return filter(lambda port:
+            -reference_angle) <= angle, ports))
+        return list(filter(lambda port:
             self.simulated_agent.userData.position.distance(port.position) <= tolerrance + self.simulated_agent.userData.shape.get_radius() + port.userData.get_radius()
-            , ports_in_angle)
+            , ports_in_angle))
             
     def walls_in_collision_of(self, tolerrance = 2e-1, angle = pi):
         reference_point = self.simulated_agent.userData.position
         reference_angle = self.simulated_agent.userData.angle
-        walls = filter(lambda wall: wall.userData.type == 'wall', self.detected_object)
-        walls_in_angle = filter(lambda wall: 
+        walls = list(filter(lambda wall: wall.userData.type == 'wall', self.detected_object))
+        walls_in_angle = list(filter(lambda wall: 
             abs(atan2(wall.userData.location.y-reference_point.y, wall.userData.location.x-reference_point.x)
-            -reference_angle) <= angle, walls)
+            -reference_angle) <= angle, walls))
         for wall in walls_in_angle:
-            print "test:", pow(min(wall.userData.dimension)**2.0, 0.5), self.simulated_agent.userData.shape.get_radius()
-        return filter(lambda wall:
+            print("test:", pow(min(wall.userData.dimension)**2.0, 0.5), self.simulated_agent.userData.shape.get_radius())
+        return list(filter(lambda wall:
             self.simulated_agent.userData.position.distance(wall.userData.location) <= tolerrance + self.simulated_agent.userData.shape.get_radius() + pow(min(wall.userData.dimension)**2.0*2.0, 0.5) / 2.0
-            , walls_in_angle)
+            , walls_in_angle))
 
 
 # Agent Template

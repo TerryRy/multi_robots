@@ -17,4 +17,4 @@ class Wall(Obstacles):
         Wall.counter += 1
 
     def debug_walls(self):
-        print self.location
+        print(self.location)

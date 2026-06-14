@@ -4,7 +4,7 @@ import sys, os, glob
 import re
 import importlib
 from multiprocessing import Process
-from multiprocessing.queues import Queue
+from multiprocessing.queues import queue as Queue
 from cmd2 import Cmd, with_argparser
 import argparse
 from threading import Thread
@@ -111,29 +111,29 @@ class ControlApp(Cmd):
                 if pid == GET_FLAG: # returned by get query, store into variable
                     var_name, type_str, obj_str = msg
                     self.variable_dict[var_name] = convert_to_protocol_data(type_str, obj_str)
-                    print self.variable_dict[var_name]
+                    print(self.variable_dict[var_name])
                     continue
                 if msg.find(CLICKED_FLAG) >= 0:
-                    print msg
+                    print(msg)
                 elif msg.find(WARNING_FLAG) >= 0:
                     title = retrieve_title_from_pid(pid)
-                    print "{}: {}".format(title, msg)
+                    print("{}: {}".format(title, msg))
                 elif msg.find(RECEIVED_FLAG) >= 0:
                     title = retrieve_title_from_pid(pid)
-                    print "{}: {}".format(title, msg)
+                    print("{}: {}".format(title, msg))
                 elif msg == SUBPROCESS_END_FLAG: # terminate subprocess
                     title = retrieve_title_from_pid(pid)
                     p = self.children_process_dict[title]
                     p.process.join()
                     del self.children_process_dict[title]
-                    print "Close simulator:", title
+                    print("Close simulator:", title)
                     # deal with active process
                     if title == self.active_process_title and len(self.children_process_dict) > 0:
-                        self.active_process_title = self.children_process_dict.keys()[0]
-                        print "Current active simulator:", self.active_process_title
+                        self.active_process_title = list(self.children_process_dict.keys())[0]
+                        print("Current active simulator:", self.active_process_title)
                     else:
                         self.active_process_title = None
-                        print "No simulator exists"
+                        print("No simulator exists")
                     # deal with log process
                     if log_process == pid:
                         log_process = None
@@ -146,10 +146,10 @@ class ControlApp(Cmd):
                     log_title = None
                 else:
                     if pid == log_process:
-                        print "{}: {}".format(log_title, msg)
+                        print("{}: {}".format(log_title, msg))
                     continue
             except Exception as e:
-                print "Thread process incoming msg failed:", e
+                print("Thread process incoming msg failed:", e)
 
     @with_argparser(new_parser)
     def do_new(self, args):
@@ -166,7 +166,7 @@ class ControlApp(Cmd):
         self.children_process_dict[title] = TalkInterface(child_p, out_q)
         child_p.start()
         self.active_process_title = title
-        print "Current active simulator:", self.active_process_title
+        print("Current active simulator:", self.active_process_title)
 
     def complete_new(self, text, line, begidx, endidx):
         flag_dict = \
@@ -214,7 +214,7 @@ class ControlApp(Cmd):
         title = self.__process_title(title)
         if title: # found
             self.active_process_title = title
-            print "Current active simulator:", self.active_process_title
+            print("Current active simulator:", self.active_process_title)
 
     def complete_activate(self, text, line, begidx, endidx):
         index_dict = \
@@ -248,21 +248,21 @@ class ControlApp(Cmd):
         '''Create a new planner file from template, the class name must be in CamelCase, e.g. MyOwnAlgorithm'''
         def create_classfile(src_file, dest_file, TEMPLATE_NAME):
             if os.path.exists(dest_file):
-                print "Unable to create file {}: file already exist".format(dest_file)
+                print("Unable to create file {}: file already exist".format(dest_file))
                 return
             shutil.copy2(src_file, dest_file)
             # replace the name of TemplateClass to a user specified one: https://stackoverflow.com/a/290494
             for line in fileinput.input(dest_file, inplace=True):
                 if line.find(TEMPLATE_NAME) >= 0:
-                    print line.replace(TEMPLATE_NAME, class_name), # comma suppress \n
+                    print(line.replace(TEMPLATE_NAME, class_name), end="") # comma suppress \n
                 else:
-                    print line,
+                    print(line, end="")
             fileinput.close()
             temp = dest_file.split('/')
             pkg = '.'.join(temp[1:-1])
             module_name = temp[-1].split('.py')[0]
             importlib.import_module('.'+module_name, package=pkg)
-            print "New file created at", dest_file
+            print("New file created at", dest_file)
             try:
                 if os.system("code "+dest_file) != 0:
                     raise Exception('')
@@ -293,7 +293,7 @@ class ControlApp(Cmd):
             if class_name in LocalPlanner.__subclasses__() or \
                 class_name in GlobalPlanner.__subclasses__() or \
                     class_name in MultiAgentPlanner.__subclasses__():
-                    print "Unable to create class {}: another class with same name already exist".format(class_name)
+                    print("Unable to create class {}: another class with same name already exist".format(class_name))
                     return True
             return False
 
@@ -329,11 +329,11 @@ class ControlApp(Cmd):
             try:
                 os.remove(temp_path)
                 os.remove(temp_path+'c') # also remove the binary
-                print "Remove file: '{}'".format(temp_path)
+                print("Remove file: '{}'".format(temp_path))
                 return
             except Exception as e:
                 err += str(e)+'\n'
-        print err[:-1] # suppress last \n
+        print(err[:-1]) # suppress last \n
 
     def complete_rm(self, text, line, begidx, endidx):
         user_classes = []
@@ -389,7 +389,7 @@ class ControlApp(Cmd):
             output = self.variable_dict[argv[0]]
             attr_acc_str = argv.pop(0)
         else:
-            print "Cannot find variable {}".format(args)
+            print("Cannot find variable {}".format(args))
             return
         while len(argv) > 0:
             try:
@@ -397,9 +397,9 @@ class ControlApp(Cmd):
                 output = getattr(output, current_attr)
                 attr_acc_str += '.'+current_attr
             except Exception as e:
-                print "{} does not have attribute {}".format(attr_acc_str, current_attr)
+                print("{} does not have attribute {}".format(attr_acc_str, current_attr))
                 return
-        print output
+        print(output)
 
     def complete_print(self, text, line, begidx, endidx):
         index_dict = \
@@ -418,7 +418,7 @@ class ControlApp(Cmd):
         if not title: # None-input
             if self.active_process_title: # at leat 1 simulator exist
                 return self.active_process_title
-        print "Cannot find simulator titled '{}'".format(title)
+        print("Cannot find simulator titled '{}'".format(title))
             
 
     do_eof = do_quit
@@ -439,7 +439,7 @@ if __name__ == '__main__':
             try:
                 importlib.import_module('.'+module_name, package=pkg)
             except:
-                print "Unable to import", module_name
+                print("Unable to import", module_name)
         subpath = path+'/*'
         paths.extend([f for f in glob.glob(subpath)])
 

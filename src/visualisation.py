@@ -212,7 +212,7 @@ class Visualisation:
                 """the touching flag will be True, only when the objects got collision"""
                 if contact.touching == True:
                     if contact.fixtureA.userData == Agent or contact.fixtureB.userData == Agent:
-                        print contact.fixtureA.userData, contact.fixtureB.userData
+                        print(contact.fixtureA.userData, contact.fixtureB.userData)
                     for point in contact.worldManifold.points:
                         if point != (0.0,0.0):
                             self.draw_contact(screen, point)
@@ -238,7 +238,7 @@ class Visualisation:
             text_pos2.center=(self.screen_width/2, self.workspace_height + 2*self.pixels_per_meter + self.reference_point[1])
             screen.blit(text_obj2,text_pos2)
             try:
-                port = self.simulator.environment.loading_ports.values()[0]
+                port = list(self.simulator.environment.loading_ports.values())[0]
                 text_obj3=font1.render("Parameters: Port Process Time:" +
                     str(port.operation_time_in_secs),
                     True, (0,0,0))
@@ -390,47 +390,46 @@ class Visualisation:
             # right-click shows port info
             if clicked_ports != None and event.button == 3:
                 for port in clicked_ports:
-                    print "--------------Port {}------------".format(port.identifier)
+                    print("--------------Port {}------------".format(port.identifier))
                     for key in port.queue.agent_slot_map:
-                        print "agent id", key
-                        print "should go slot", port.queue.slots.index(port.queue.agent_slot_map[key])
-                        print "slot position", port.queue.agent_slot_map[key].x, port.queue.agent_slot_map[key].y
+                        print("agent id", key)
+                        print("should go slot", port.queue.slots.index(port.queue.agent_slot_map[key]))
+                        print("slot position", port.queue.agent_slot_map[key].x, port.queue.agent_slot_map[key].y)
                         agent = self.simulator.agents[key]
-                        print "agent position", agent.position
-                        print "agent destination", agent.destination_location
-                        print "agent state", agent.state
-                        print "agent local planner: ", agent.current_local_planner
-                        print ""
-                print "--------------------------------"
+                        print("agent position", agent.position)
+                        print("agent destination", agent.destination_location)
+                        print("agent state", agent.state)
+                        print("agent local planner: ", agent.current_local_planner)
+                        print("")
+                print("--------------------------------")
             # right-click shows agent info
             if clicked_agents != None and event.button == 3:
                 for agent in clicked_agents:
-                    print "--------------------------------"
-                    print "agent id", agent.id
-                    print "agent position", agent.position
-                    print "agent destination", agent.destination_location
-                    print "agent state", agent.state
-                    print "arrive destination?"
+                    print("--------------------------------")
+                    print("agent id", agent.id)
+                    print("agent position", agent.position)
+                    print("agent destination", agent.destination_location)
+                    print("agent state", agent.state)
+                    print("arrive destination?")
                     if agent.position.distance(agent.destination_location) < 5e-3:
-                        print "yes"
+                        print("yes")
                     else:
-                        print "no"
+                        print("no")
                     for obj in agent.sensor.visible_object:
                         try:
-                            print "detected objects: ", obj.userData.type, "id: ", obj.userData.id
+                            print("detected objects: ", obj.userData.type, "id: ", obj.userData.id)
                         except:
-                            print "None "
-                    print "agent goal vector", agent.get_linear_velocity()[0], agent.get_linear_velocity()[1]
-                    print "agent goal angle in degree", degrees(atan2(
-                        agent.get_linear_velocity()[1], agent.get_linear_velocity()[0])),'in radius:', atan2(agent.get_linear_velocity()[1], agent.get_linear_velocity()[0])
+                            print("None ")
+                    print("agent goal vector", agent.get_linear_velocity()[0], agent.get_linear_velocity()[1])
+                    print("agent goal angle in degree", degrees(atan2(agent.get_linear_velocity()[1], agent.get_linear_velocity()[0])), "in radius:", atan2(agent.get_linear_velocity()[1], agent.get_linear_velocity()[0]))
                     agent_body = self.simulator.b2_objects[agent.get_id()]
-                    print "current angle in degree", degrees(agent_body.angle), 'in radius:',agent_body.angle
-                    print "agent local planner: ", agent.current_local_planner
-                    print "agent global planner: ", agent.global_planner
-                    print "current angular velocity in degree", degrees(agent_body.angularVelocity), 'in radius:',agent_body.angularVelocity
-                    print "replan(True or False):", agent.replan
-                    print "--------------------------------"
-            print "{}: ({:.2f}, {:.2f})".format(CLICKED_FLAG, pos[0], pos[1])
+                    print("current angle in degree", degrees(agent_body.angle), 'in radius:',agent_body.angle)
+                    print("agent local planner: ", agent.current_local_planner)
+                    print("agent global planner: ", agent.global_planner)
+                    print("current angular velocity in degree", degrees(agent_body.angularVelocity), 'in radius:',agent_body.angularVelocity)
+                    print("replan(True or False):", agent.replan)
+                    print("--------------------------------")
+            print("{}: ({:.2f}, {:.2f})".format(CLICKED_FLAG, pos[0], pos[1]))
 
         if event.type == pygame.MOUSEBUTTONUP:
             pos = ((pygame.mouse.get_pos()[0] - self.reference_point[0]*1.0) / self.pixels_per_meter,
@@ -454,7 +453,7 @@ class Visualisation:
                 if self.clicked_agent:
                     self.clicked_agent.position = pos
                 else:
-                    print "clicked position is ", pos
+                    print("clicked position is ", pos)
                 return True
             if self.choose and not self.clicked:
                 return True
@@ -581,16 +580,16 @@ class Visualisation:
             config_data = json.load(file)
         return config_data
     def __terminal_print(self):
-        print ("")
-        print ("--------------------------------------------------------------------------")
-        print ("The Blue Port is loading port, and the Red Port is unloading ports")
-        print ("--------------------------------------------------------------------------")
-        print ("press q to exit")
-        print ("press g to show/hide the grid map ")
-        print ("press s to show/hide the range of radar")
-        print ("press r to show/hide the control range of ports")
-        print ("press d to show/hide the agents' details")
-        print ("Red circle is the start of the control range of ports")
-        print ("Blue circle is the end of the control range of ports")
-        print ("Press b to OPEN DEBUG MODE, which draw everything from BOX2D")
-        print ("press p to pause the simulator")
+        print((""))
+        print(("--------------------------------------------------------------------------"))
+        print(("The Blue Port is loading port, and the Red Port is unloading ports"))
+        print(("--------------------------------------------------------------------------"))
+        print(("press q to exit"))
+        print(("press g to show/hide the grid map "))
+        print(("press s to show/hide the range of radar"))
+        print(("press r to show/hide the control range of ports"))
+        print(("press d to show/hide the agents' details"))
+        print(("Red circle is the start of the control range of ports"))
+        print(("Blue circle is the end of the control range of ports"))
+        print(("Press b to OPEN DEBUG MODE, which draw everything from BOX2D"))
+        print(("press p to pause the simulator"))

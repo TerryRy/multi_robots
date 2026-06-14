@@ -39,7 +39,7 @@ import random
 import numpy as np
 import matplotlib.pyplot as plt
 import re
-import Queue
+
 from interaction_handler import *
 
 """entity category of different fixtures in simulator"""
@@ -185,7 +185,7 @@ class Simulator(b2ContactListener):
             test_agent.use_global_planner(global_planner(test_agent))
             test_agent.static_environment = environment_map
         else: # Unknown
-            print "simulator.py: unknown type of global planner", global_planner
+            print("simulator.py: unknown type of global planner", global_planner)
             test_agent.global_planner = None
         test_agent.goal_changed = True # trigger replan
 
@@ -252,7 +252,7 @@ class Simulator(b2ContactListener):
         if Simulator.step_counter % 10 == 0:
             self.heatmap_data.extend([(agent.position.y, agent.position.x) for agent in self.agents])
         if self.time % 60 ==0 and self.task_count >0:
-            print "Current PPH:", self.task_count/self.time*3600
+            print("Current PPH:", self.task_count/self.time*3600)
 
     """RayCast for sensor using"""
     def ray_cast_callback(self, agent_body, angle):
@@ -294,9 +294,9 @@ class Simulator(b2ContactListener):
                 if self.get_simulator_time() % 60 == 0:
                     print(str(self.get_simulator_time()/60.0)+' minutes passed in simulation world')
                     end_realworld_time = time.time()
-                    print int(end_realworld_time - start_realworld_time), "seconds passed in real world"
+                    print(int(end_realworld_time - start_realworld_time), "seconds passed in real world")
                     if self.get_simulator_time() > 0:
-                        print "PPH is", float(self.task_count)/self.get_simulator_time()*3600, "now"
+                        print("PPH is", float(self.task_count)/self.get_simulator_time()*3600, "now")
                     print("---------------------------------------------------------------------")
                 self.step()
     def get_simulator_time(self):
@@ -316,7 +316,7 @@ def json_decoder_environment_data():
     return data
 
 def print_heatmap(simulator, PPH):
-    y,x =zip(*simulator.heatmap_data)
+    y,x =list(zip(*simulator.heatmap_data))
     heatmap, xedges, yedges = np.histogram2d(x, y, bins=(100,100))
     extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
 

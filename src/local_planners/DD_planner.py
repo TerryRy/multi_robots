@@ -15,8 +15,8 @@ from math import cos, sin, tan, atan2, asin, fmod
 from math import pi as PI
 from geometry import *
 from agents.agent_state_machine import AgentState
-from local_planner import LocalPlanner
-from rvo_planner import norm
+from .local_planner import LocalPlanner
+from .rvo_planner import norm
 
 
 class DDPlanner(LocalPlanner):

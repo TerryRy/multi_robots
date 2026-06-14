@@ -11,7 +11,7 @@ from math import cos, sin, tan, atan2, asin, fmod, tanh
 from math import pi as PI
 from geometry import *
 from agents.agent_state_machine import AgentState
-from local_planner import LocalPlanner
+from .local_planner import LocalPlanner
 
 class RVOPlanner(LocalPlanner):
     def compute_plan(self, position, velocity, gridmap, sensor_observation, global_planner_path):

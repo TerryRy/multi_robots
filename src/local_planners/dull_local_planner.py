@@ -5,7 +5,7 @@
 @brief : local planner which follows the waypoint of the given global_planner_path strictly
 """
 from geometry import Vector, compute_direction, Point
-from local_planner import LocalPlanner
+from .local_planner import LocalPlanner
 from math import sqrt
 class DullPlanner(LocalPlanner):
     """

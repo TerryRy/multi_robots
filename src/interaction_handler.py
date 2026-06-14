@@ -155,7 +155,7 @@ def obstacle_generator(obstacle_map, width, height):
             obstacle_str = f.readline()
             obstacle_tuples_list = re.findall(r'\((.*?)\)',obstacle_str)
         except Exception as e:
-            print "obstacle_generator:", e
+            print("obstacle_generator:", e)
     elif obstacle_flag in obstacle_map:
         obstacle_str = obstacle_map[obstacle_flag]
         obstacle_tuples_list = re.findall(r'\((.*?)\)',obstacle_str)
@@ -164,7 +164,7 @@ def obstacle_generator(obstacle_map, width, height):
         if len(obstacle_tuples_list) == 0: # user use percentage rather than manually specified obstacle string
             percentage = float(obstacle_str)
             if percentage > 0.7:
-                print "The congestion level is too high to be valid, cannot generate obstacle map"
+                print("The congestion level is too high to be valid, cannot generate obstacle map")
                 return [], width, height
             # try to generate random obstacles
             seed = time.time()
@@ -198,10 +198,10 @@ def obstacle_generator(obstacle_map, width, height):
                 # check the validation of customized input
                 x, y, dimension = tuple(map(float, re.split('[ ]*,[ ]*', square_str)))
                 if x < valid_width[0] or y < valid_height[0] or x+dimension > valid_width[1] or y+dimension > valid_height[1]:
-                    print "({}) is discarded since it will block the way to ports or out of bound;".format(square_str)
+                    print("({}) is discarded since it will block the way to ports or out of bound;".format(square_str))
                     continue
                 if x <= spanning_center_x <= x+dimension and y <= spanning_center_y <= y+dimension:
-                    print "({}) is discarded since it covers the center of spanning tree".format(square_str)
+                    print("({}) is discarded since it covers the center of spanning tree".format(square_str))
                     continue
                 inbound_tuples_list.append(square_str)
             obstacle_tuples_list = inbound_tuples_list
@@ -246,14 +246,14 @@ def controller_cmd_handler(simulator, running):
     if not (simulator.receive_q and simulator.send_q): # not in controllable mode
         return (running, False) # do nothing
     if not running: # terminated, tell the controller is terminated
-        print SUBPROCESS_END_FLAG
+        print(SUBPROCESS_END_FLAG)
         return (running, False)
     def to_point(float_list):
         return Point(float_list[0], float_list[1])
     while not simulator.receive_q.empty():
         flag, cmd = simulator.receive_q.get()
         if flag == SUBPROCESS_END_FLAG:
-            print SUBPROCESS_END_FLAG
+            print(SUBPROCESS_END_FLAG)
             running = False
             return (running, False)
         elif flag == CONTROL_FLAG: # input from do_control
@@ -274,17 +274,17 @@ def controller_cmd_handler(simulator, running):
                         agent.state = AgentState.CRUISE
                         agent.goal_changed = True
                     except Exception as e:
-                        print "{}: Cannot extract path from {}, did you input a valid one? {}".format(WARNING_FLAG, cmd.path, e)
+                        print("{}: Cannot extract path from {}, did you input a valid one? {}".format(WARNING_FLAG, cmd.path, e))
                 if cmd.global_planner: # reset agent's global planner
                     try:
                         simulator.set_global_planner(simulator.agents[aid],process_global_planner_cmd(cmd.global_planner))
                     except:
-                        print "{}: Cannot find agent of id {} when setting global planner {}".format(WARNING_FLAG,aid, cmd.global_planner)
+                        print("{}: Cannot find agent of id {} when setting global planner {}".format(WARNING_FLAG,aid, cmd.global_planner))
                 if cmd.local_planner:
                     try:
                         simulator.set_local_planner(simulator.agents[aid], process_local_planner_cmd(cmd.local_planner))
                     except:
-                        print "{}: Cannot find agent of id {} when setting local planner {}".format(WARNING_FLAG,aid, cmd.local_planner)
+                        print("{}: Cannot find agent of id {} when setting local planner {}".format(WARNING_FLAG,aid, cmd.local_planner))
             # for display back to control panel
             if not valid_path:
                 cmd.path = valid_path
@@ -294,14 +294,14 @@ def controller_cmd_handler(simulator, running):
                 try:
                     simulator.send_q.put((GET_FLAG, (var_name, AGENT_TYPE_FLAG, convert_to_protocol_data_string(int(aid_str), simulator.agents[int(aid_str)]))))
                 except Exception as e:
-                    print "{}: Cannot find agent of id {} when retrieving instance".format(WARNING_FLAG,int(aid_str))
+                    print("{}: Cannot find agent of id {} when retrieving instance".format(WARNING_FLAG,int(aid_str)))
             elif cmd.require_sensor:
                 sid_str, var_name = cmd.require_sensor
                 try:
                     simulator.send_q.put((GET_FLAG, (var_name, SENSOR_TYPE_FLAG, convert_to_protocol_data_string(int(sid_str), simulator.agents[int(sid_str)].sensor))))
                 except Exception as e:
-                    print "{}: Cannot find sensor of id {} when retrieving instance".format(WARNING_FLAG,int(sid_str))
-        print "{}: {}".format(RECEIVED_FLAG, cmd)
+                    print("{}: Cannot find sensor of id {} when retrieving instance".format(WARNING_FLAG,int(sid_str)))
+        print("{}: {}".format(RECEIVED_FLAG, cmd))
     return (running, True)
 
 def convert_to_protocol_data(type_str, obj_str):
@@ -404,9 +404,9 @@ def dynamic_importer(module_name, class_name):
             return my_class
         except:
             pass
-    print "Unable to find {}".format(class_name)
+    print("Unable to find {}".format(class_name))
     return None
 
 if __name__ == "__main__":
-    print convert_planner_name_by_uppercase("MyMAGlobal")
-    print convert_planner_name_by_uppercase("JustTryIt")
+    print(convert_planner_name_by_uppercase("MyMAGlobal"))
+    print(convert_planner_name_by_uppercase("JustTryIt"))

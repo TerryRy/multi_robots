@@ -36,7 +36,7 @@ class RRTStar(GlobalPlanner):
     # random.seed(100)
 
     def compute_path(self, position, goal_pose, continous_space, sensor_observation):
-        print "agent {} search path via RRT* ... ".format(self.agent.id)
+        print("agent {} search path via RRT* ... ".format(self.agent.id))
         #main
         self.debug_screen = pygame.display.get_surface()
         start_search_time = time.time()
@@ -86,7 +86,7 @@ class RRTStar(GlobalPlanner):
 
         path = self.extract_path(goal_state)
         path.reverse()
-        print "RRT* DONE in {} sec".format(time.time() - start_search_time)
+        print("RRT* DONE in {} sec".format(time.time() - start_search_time))
         return path
 
     def extract_path(self, goal_state):
