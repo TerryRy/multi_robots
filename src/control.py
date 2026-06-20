@@ -4,7 +4,7 @@ import sys, os, glob
 import re
 import importlib
 from multiprocessing import Process
-from multiprocessing.queues import queue as Queue
+from multiprocessing.queues import Queue
 from cmd2 import Cmd, with_argparser
 import argparse
 from threading import Thread

@@ -73,7 +73,7 @@ def draw_agent(polygon, body, fixture, screen, agent, PPM, workspace_dimension, 
     centroid[1] = centroid[1]+reference_point[1]
     arrow_end = centroid +  body.linearVelocity * PPM/2
     agent_color = (125, 125, 125, 255)
-    font=pygame.font.SysFont("Calibri",int(20*PPM/30.0))
+    font=pygame.font.Font(None,int(20*PPM/30.0))
     font.set_bold(True)
     if is_sensor:
         pygame.draw.polygon(screen, (255, 0, 0 , 255), vertices, 2)
@@ -95,19 +95,22 @@ def draw_agent(polygon, body, fixture, screen, agent, PPM, workspace_dimension, 
             return [int(vertex.x*PPM+reference_point[0]), int(vertex.y*PPM+reference_point[1])]
 
         text_obj2=font.render("Agent"+str(agent.id)+":("+str(int(agent.position.x))+","+str(int(agent.position.y))+
-        ") STATE:"+str(agent.state)[11:],True, (0,0,0))    #STATE:"+str(agent.state)[11:]+'        DEST:'+str(agent.destination_location), True, (0,0,0)) #+str(agent.state)[11:]
+        ") STATE:"+str(agent.state)[11:],True, (0,0,0))
         text_pos2 = text_obj2.get_rect()
         workspace_height = workspace_dimension[1]
-        text_pos2.topleft=(PPM+PPM*10*(agent.id//10)+reference_point[0],workspace_height+PPM*4+PPM*(agent.id%10)+reference_point[1])
+        col = agent.id // 3
+        row = agent.id % 3
+        x_base = PPM + PPM * 10 * col + reference_point[0]
+        y_base = workspace_height + PPM * 4 + reference_point[1]
+        text_pos2.topleft=(x_base, y_base + PPM * row)
         screen.blit(text_obj2,text_pos2)
-        #Agent Destination
         text_obj3=font.render("DEST: None",True, (0,0,0))
         if agent.destination_location:
             text_obj3 = font.render("DEST: ("+ str(int(agent.destination_location.x))+","+str(int(agent.destination_location.y))+")",True, (0,0,0))
             pygame.draw.circle(screen, agent_color, rectify_vertex_position(agent.destination_location), 7, 0)
         text_pos3 = text_obj3.get_rect()
         workspace_height = workspace_dimension[1]
-        text_pos3.topleft=(PPM+PPM*10*(agent.id//10)+reference_point[0],workspace_height+PPM*4.5+PPM*(agent.id%10)+reference_point[1])
+        text_pos3.topleft=(x_base, y_base + PPM * row + PPM // 2)
         screen.blit(text_obj3,text_pos3)
 
         for pose in agent.sequence_of_poses:
@@ -217,7 +220,7 @@ class Visualisation:
                         if point != (0.0,0.0):
                             self.draw_contact(screen, point)
 
-            font1 = pygame.font.SysFont("arial",int(20*self.font_scale))
+            font1 = pygame.font.Font(None,int(20*self.font_scale))
             try:
                 PPH = int(self.simulator.task_count/self.simulator.get_simulator_time()*3600)
             except:
@@ -286,7 +289,7 @@ class Visualisation:
 
     def draw_everything(self, screen, show_grid, show_control_range, show_agent, show_agent_details, show_sensor_range):
         '''non debug mode'''
-        screen_color = (216, 222, 228, 0)
+        screen_color = (216, 222, 228)
         screen.fill(screen_color)
         self.draw_workspace(screen)
         self.draw_grid(show_grid, screen, (0,50,50))
@@ -334,7 +337,7 @@ class Visualisation:
                 self.meter_to_pixel(self.clicked_pos[0]), 
                 self.meter_to_pixel(self.clicked_pos[1]), 
                 self.meter_to_pixel(pos[0] - self.clicked_pos[0]),
-                self.meter_to_pixel(pos[1] - self.clicked_pos[1]), (0, 0, 0, 0), 1)
+                self.meter_to_pixel(pos[1] - self.clicked_pos[1]), (0, 0, 0), 1)
 
     def mouse_event_handler(self, event, screen):
         # added new feature here. The agent can be moved by mouse now
@@ -472,11 +475,11 @@ class Visualisation:
     def draw_grid(self, show_grid, screen, color):
         pixels_per_grid = self.pixels_per_meter / self.grids_num_per_meter
         if show_grid:
-            for i in range((self.workspace_height-self.pixels_per_meter) // pixels_per_grid):
+            for i in range(int((self.workspace_height-self.pixels_per_meter) // pixels_per_grid)):
                 pygame.draw.line(screen, color, [self.reference_point[0], i * pixels_per_grid+self.reference_point[1]],
                     [self.workspace_width - self.pixels_per_meter + self.reference_point[0],
                     i * pixels_per_grid + self.reference_point[1]], 1)
-            for j in range((self.workspace_width-self.pixels_per_meter) // pixels_per_grid):
+            for j in range(int((self.workspace_width-self.pixels_per_meter) // pixels_per_grid)):
                 pygame.draw.line(screen, color, [j * pixels_per_grid + self.reference_point[0], self.reference_point[1]],
                     [j * pixels_per_grid + self.reference_point[0],
                     self.workspace_height - self.pixels_per_meter +  self.reference_point[1]], 1)
@@ -562,7 +565,7 @@ class Visualisation:
         pygame.draw.rect(screen, (255,0, 0, 255), rect, 1)
     #0.5 is for the grids_num_per_meter  is 1
     def draw_port_id(self, screen, port):
-        font=pygame.font.SysFont("Calibri",int(40*self.font_scale))
+        font=pygame.font.Font(None,int(40*self.font_scale))
         font.set_bold(True)
         identifier = port.identifier
         text_obj=font.render(str(identifier), True, (255,255,255))
