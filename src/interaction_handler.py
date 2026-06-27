@@ -41,6 +41,8 @@ def create_cmd_parser(prog=None):
     general_control.add_argument('--title', action='store', type=str, default="Dorabot Minions", dest='title', help='Set the title of the simulator')
     general_control.add_argument('--gp', action='store', type=str, dest='global_planner', help='Set the global planners for all agents, choices include: LayeredAStar | RRTStar | MARRTStar | INashRRT')
     general_control.add_argument('--lp', action='store', type=str, dest='local_planner', help='Set the local planners for all agents, choices include: VirtualForcePlanner | FLCPlanne')
+    general_control.add_argument('--vla', action='store_true', dest='use_vla', help='Use VLA controller instead of hand-written planners')
+    general_control.add_argument('--vla-collect', action='store_true', dest='vla_collect', help='Run hand-written planners and record expert trajectories for VLA training')
     
     # json_control
     json_control.add_argument('--agent', action='store', type=int, dest='agents_num', help='Set the number of agents', metavar='N')

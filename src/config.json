@@ -3,14 +3,14 @@
         "unloading_ports_process_time": 2,
         "width_in_meters": 45,
         "loading_ports_process_time": 2,
-        "num_unloading_ports": 10,
+        "num_unloading_ports": 2,
         "temp_ports_number": 5,
         "top_left_corner": {
             "y": 0,
             "x": 0
         },
         "height_in_meters": 20,
-        "num_loading_ports": 10,
+        "num_loading_ports": 2,
         "resolution": 1
     },
     "visualization": {
@@ -24,7 +24,7 @@
         "cruise_speed": 1.5,
         "curise_speed": 1.5,
         "dimension": 0.5,
-        "number": 10
+        "number": 2
     },
     "simulator": {
         "use_polygon_workspace": false,

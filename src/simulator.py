@@ -41,6 +41,7 @@ import matplotlib.pyplot as plt
 import re
 
 from interaction_handler import *
+from vla.vla_controller import VLAController
 
 """entity category of different fixtures in simulator"""
 class EntityCategory(Enum):
@@ -235,7 +236,23 @@ class Simulator(b2ContactListener):
             agent.history_ray_point_list.append(agent.ray_point_list)
 
         for agent in self.agents:
-            self.__update_agent_state(agent, agent.ray_length_list)
+            agent.observe(agent.ray_length_list)
+            if hasattr(self, 'vla_controller') and self.vla_controller is not None:
+                if self.vla_controller.collect_data:
+                    self.__update_agent_state(agent, agent.ray_length_list)
+                else:
+                    func = agent.state_machine.next_state(agent)
+                    func(agent, agent.server)
+                    if agent.has_destination() and agent.goal_changed:
+                        agent.destination_location = agent.task.destination_location
+                        agent.goal_changed = False
+            else:
+                self.__update_agent_state(agent, agent.ray_length_list)
+
+        if hasattr(self, 'vla_controller') and self.vla_controller is not None:
+            self.vla_controller.step(self)
+
+        for agent in self.agents:
             agent_body = self.b2_objects[agent.get_id()]
             agent_body.linearVelocity = agent.linear_velocity
             agent_body.angle = atan2(agent.linear_velocity[1], agent.linear_velocity[0])
@@ -372,6 +389,11 @@ def start_simulator(args, receive_q = None, send_q = None):
     # assign local and global planner according to cmd input
     general_local_planner = process_local_planner_cmd(cmd_args.local_planner)
     general_global_planner = process_global_planner_cmd(cmd_args.global_planner)
+    if cmd_args.vla_collect:
+        if general_global_planner is None:
+            general_global_planner = process_global_planner_cmd("LayeredAStar")
+        if general_local_planner == DullPlanner:
+            general_local_planner = DullPlanner
 
     # Create agents
     # The size of agents should be at least one gird
@@ -410,11 +432,31 @@ def start_simulator(args, receive_q = None, send_q = None):
         for i in range(100):
             port.get_random_item(simulator.environment.num_unloading_ports)
     
+    # Initialize VLA controller if --vla flag is set
+    if cmd_args.use_vla or cmd_args.vla_collect:
+        vla_config = {
+            "chunk_size": 8,
+            "steps_per_sec": config_data['simulator']['steps_per_sec'],
+            "use_mock": True,
+            "collect_data": cmd_args.vla_collect,
+            "action_mode": "continuous",
+        }
+        simulator.vla_controller = VLAController(agents, simulator.b2_objects, vla_config)
+        if cmd_args.vla_collect:
+            print("Data collection mode: recording expert trajectories + mock VLA waypoints")
+        else:
+            print("VLA mode: using mock VLA policy (8-step waypoint chunks)")
+    else:
+        simulator.vla_controller = None
+    
     simulator.run(show_visualisation)
 
 
     print("Time in seconds:",simulator.time)
     print("Number of Packages Delivered:", simulator.task_count)
+    if hasattr(simulator, 'vla_controller') and simulator.vla_controller is not None:
+        simulator.vla_controller.flush_data()
+        print("Training data saved to data/trajectories/")
     #PPH = simulator.task_count/simulator.time*3600
     #print("PPH(Packages Per Hour: ", PPH)
     #print_heatmap(simulator, PPH)
