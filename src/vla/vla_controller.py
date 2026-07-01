@@ -1,14 +1,7 @@
-"""
-VLA Controller: central orchestrator for VLA-based multi-agent control.
-
-- Holds StateSerializer, WaypointTrackers, and VLAModel
-- Triggers VLA inference every `chunk_size` simulation steps
-- Distributes waypoints to per-agent trackers
-- In data-collection mode, runs hand-written planners and records expert waypoints
-"""
 from vla.state_serializer import StateSerializer
 from vla.waypoint_tracker import WaypointTracker
 from vla.data_collector import DataCollector
+from vla.renderer import SimulatorRenderer
 from math import cos, sin
 
 DEBUG = False
@@ -26,9 +19,10 @@ class VLAController:
         self.dt = 1.0 / self.steps_per_sec
         self.use_mock = config.get("use_mock", True)
         self.collect_data = config.get("collect_data", False)
-        self.action_mode = config.get("action_mode", "diffusion")
+        self.action_mode = config.get("action_mode", "continuous")
 
         self.serializer = StateSerializer()
+        self.renderer = SimulatorRenderer(img_size=224)
         self.trackers = {}
         for agent in agents:
             self.trackers[agent.id] = WaypointTracker(agent, self.dt)
@@ -37,6 +31,14 @@ class VLAController:
         if self.use_mock:
             from vla.model_loader import load_mock_policy
             self._model = load_mock_policy(self.action_mode)
+        else:
+            from vla.model_loader import load_openvla_policy
+            model_id = config.get("model_id", "openvla/openvla-7b")
+            device = config.get("device", "cpu")
+            self._model = load_openvla_policy(
+                model_id=model_id, device=device,
+                action_mode=self.action_mode, chunk_size=self.chunk_size,
+            )
 
         self._data_collector = None
         if self.collect_data:
@@ -44,6 +46,7 @@ class VLAController:
                 action_mode=self.action_mode,
                 chunk_size=self.chunk_size,
                 collect_every_n_steps=self.chunk_size,
+                renderer=self.renderer,
             )
 
         self._step_counter = 0
@@ -57,7 +60,8 @@ class VLAController:
 
         if needs_inference and self._model is not None:
             text_prompt, features, agents_data = self.serializer.serialize(simulator)
-            vla_output = self._model.predict(text_prompt, features)
+            img = self.renderer.render(simulator)
+            vla_output = self._model.predict(text_prompt, features, images=img)
             if not self.collect_data:
                 self._dispatch_waypoints(vla_output, agents_data, simulator)
 
@@ -72,7 +76,8 @@ class VLAController:
                 expert_waypoints = self._collect_expert_waypoints(simulator)
                 if expert_waypoints:
                     self._data_collector.collect(
-                        text_prompt, features, agents_data, expert_waypoints
+                        text_prompt, features, agents_data, expert_waypoints,
+                        simulator=simulator,
                     )
                 if DEBUG:
                     print(f"  DataCollector: step={self._step_counter} expert_agents={list(expert_waypoints.keys())}")
@@ -130,19 +135,14 @@ class VLAController:
 
     def _collect_expert_waypoints(self, simulator):
         expert = {}
-        import time
         for agent in self.agents:
             if not hasattr(agent, 'has_destination') or not agent.has_destination():
-                continue
                 continue
             seq = agent.sequence_of_poses
             if not seq:
                 continue
             wp_list = []
             seq_iter = iter(seq)
-            pos = agent.position
-            cum_x = pos.x if hasattr(pos, 'x') else pos[0]
-            cum_y = pos.y if hasattr(pos, 'y') else pos[1]
             for _ in range(self.chunk_size):
                 try:
                     nxt = next(seq_iter)
@@ -160,3 +160,4 @@ class VLAController:
     def flush_data(self):
         if self._data_collector is not None:
             self._data_collector.flush()
+        self.renderer.close()

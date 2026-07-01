@@ -1,20 +1,15 @@
-"""
-OpenVLA-7B Policy: uses OpenVLA's pretrained Llama2-7B backbone
-(replaces SigLIP visual encoder with custom MLP feature encoder).
-
-Also supports MockVLAPolicy for fast interface testing.
-"""
 import math
 import torch
 import torch.nn as nn
 
-# ---- Mock Policy (fast interface testing) ----
+from vla.diffusion_head import DiffusionActionHead, compute_diffusion_loss, ddim_sample
+
 
 class MockVLAPolicy:
     def __init__(self, action_mode="continuous"):
         self.action_mode = action_mode
 
-    def predict(self, text_prompt, features_dict):
+    def predict(self, text_prompt, features_dict, images=None):
         agents = features_dict.get("agents", [])
         num_agents = features_dict.get("num_agents", 0)
         waypoints = {}
@@ -35,11 +30,7 @@ class MockVLAPolicy:
         return waypoints
 
 
-# ---- MLP Feature Encoder ----
-
 class AgentFeatureEncoder(nn.Module):
-    """Maps per-agent 55-dim features -> LLM embedding space."""
-
     def __init__(self, input_dim=55, hidden_dim=512, output_dim=4096):
         super().__init__()
         self.mlp = nn.Sequential(
@@ -55,69 +46,28 @@ class AgentFeatureEncoder(nn.Module):
         return self.mlp(agent_features.reshape(b * n, d)).reshape(b, n, -1)
 
 
-# ---- Action Head ----
-
-class WaypointActionHead(nn.Module):
-    def __init__(self, hidden_dim=4096, chunk_size=8, num_agents=12,
-                 action_mode="continuous",
-                 n_bins_x=25, n_bins_y=17, max_dx=0.6, max_dy=0.4):
-        super().__init__()
-        self.hidden_dim = hidden_dim
-        self.chunk_size = chunk_size
-        self.action_mode = action_mode
-        self.n_bins_x = n_bins_x
-        self.n_bins_y = n_bins_y
-        self.max_dx = max_dx
-        self.max_dy = max_dy
-
-        if action_mode == "discrete":
-            self.head = nn.Linear(hidden_dim, chunk_size * n_bins_x * n_bins_y)
-        else:
-            self.head = nn.Linear(hidden_dim, chunk_size * 2)
-
-    def forward(self, hidden_states):
-        return self.head(hidden_states)
-
-    def decode_to_waypoints(self, logits, agent_positions, agent_headings):
-        batch_size = logits.shape[0]
-        num_agents = min(logits.shape[1], len(agent_positions))
-        all_waypoints = []
-        for b in range(batch_size):
-            batch_wps = {}
-            for a in range(num_agents):
-                px, py = agent_positions[a]
-                heading = agent_headings[a]
-                raw = logits[b, a].reshape(self.chunk_size, 2)
-                wps = [(raw[i, 0].item(), raw[i, 1].item()) for i in range(self.chunk_size)]
-                global_wps = []
-                for dx, dy in wps:
-                    gx = px + dx * math.cos(heading) - dy * math.sin(heading)
-                    gy = py + dx * math.sin(heading) + dy * math.cos(heading)
-                    global_wps.append((gx, gy))
-                batch_wps[str(a)] = global_wps
-            all_waypoints.append(batch_wps)
-        return all_waypoints
-
-
-# ---- OpenVLA-7B Policy ----
-
 class OpenVLAPolicy:
     """
-    OpenVLA-7B backbone + custom MLP encoder + action head.
+    Full OpenVLA-7B pipeline with image + text + structured features.
 
     Architecture:
-      [55-dim features] -> MLP -> [4096-dim agent tokens]
-      [text prompt]     -> tokenizer -> text tokens
-      [agent tokens + text tokens] -> Llama2-7B (pretrained on Open X-Embodiment)
-      [last hidden state of agent tokens] -> action head -> waypoints
+      Image (224x224) → SigLIP (frozen) → visual tokens → Projector (frozen) → [S, 4096]
+      55-dim features  → MLP Encoder (trainable)                    → agent tokens [N, 4096]
+      text prompt      → tokenizer (frozen) → text tokens [T]
+      → concat [vis_tokens + agent_tokens + text_tokens] → Llama2-7B (LoRA)
+      → hidden states for agent tokens → DiffusionActionHead (trainable) → waypoints
     """
 
     def __init__(self, model_id="openvla/openvla-7b", device="cpu",
-                 action_mode="continuous", use_mock=False):
+                 action_mode="continuous", use_mock=False,
+                 chunk_size=8, diffusion_steps=50, max_agents=14):
         self.model_id = model_id
         self.device = device
         self.action_mode = action_mode
         self.use_mock = use_mock
+        self.chunk_size = chunk_size
+        self.diffusion_steps = diffusion_steps
+        self.max_agents = max_agents
 
         if use_mock:
             self._mock = MockVLAPolicy(action_mode)
@@ -128,11 +78,10 @@ class OpenVLAPolicy:
         self._load_model()
 
     def _load_model(self):
-        from transformers import AutoModel, AutoTokenizer
+        from transformers import AutoModel, AutoTokenizer, AutoImageProcessor
 
         print(f"Loading OpenVLA-7B from {self.model_id}...")
 
-        # Load the full VLM, extract the language model backbone
         full_model = AutoModel.from_pretrained(
             self.model_id,
             trust_remote_code=True,
@@ -141,7 +90,26 @@ class OpenVLAPolicy:
             low_cpu_mem_usage=True,
         )
 
-        # Extract Llama2-7B backbone (frozen)
+        if hasattr(full_model, 'vision_encoder'):
+            self.vision_encoder = full_model.vision_encoder
+        elif hasattr(full_model, 'vision_tower'):
+            self.vision_encoder = full_model.vision_tower
+        else:
+            raise RuntimeError("Cannot find vision_encoder in OpenVLA checkpoint")
+
+        for p in self.vision_encoder.parameters():
+            p.requires_grad = False
+        self.vision_encoder.eval()
+
+        if hasattr(full_model, 'projector'):
+            self.projector = full_model.projector
+        else:
+            raise RuntimeError("Cannot find projector in OpenVLA checkpoint")
+
+        for p in self.projector.parameters():
+            p.requires_grad = False
+        self.projector.eval()
+
         if hasattr(full_model, 'language_model'):
             self.llm = full_model.language_model
         elif hasattr(full_model, 'model'):
@@ -149,8 +117,11 @@ class OpenVLAPolicy:
         else:
             raise RuntimeError("Cannot find language model in OpenVLA checkpoint")
 
-        del full_model                         # free vision encoder memory
+        del full_model
         self.llm.to(self.device)
+        self.llm.eval()
+        for p in self.llm.parameters():
+            p.requires_grad = False
 
         hidden_dim = self.llm.config.hidden_size
 
@@ -158,53 +129,139 @@ class OpenVLAPolicy:
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        # MLP encoder: 55-dim agent features -> same dim as LLM embeddings
         self.feature_encoder = AgentFeatureEncoder(
-            input_dim=55, hidden_dim=512, output_dim=hidden_dim
-        ).to(device=self.llm.device, dtype=self.llm.dtype)
+            input_dim=55, hidden_dim=512, output_dim=hidden_dim,
+        ).to(device=self.device, dtype=self.llm.dtype)
 
-        # Action head: LLM hidden -> waypoint predictions
-        self.action_head = WaypointActionHead(
-            hidden_dim=hidden_dim, chunk_size=8, action_mode=self.action_mode,
-        ).to(device=self.llm.device, dtype=self.llm.dtype)
+        self.diffusion_head = DiffusionActionHead(
+            hidden_dim=hidden_dim, chunk_size=self.chunk_size,
+        ).to(device=self.device, dtype=self.llm.dtype)
+
+        import torchvision.transforms as T
+        self.img_preprocess = T.Compose([
+            T.Resize((224, 224)),
+            T.ToTensor(),
+            T.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ])
 
         self._ready = True
-        print(f"OpenVLA-7B loaded. LLM hidden_dim={hidden_dim}")
+        print(f"OpenVLA-7B loaded. hidden_dim={hidden_dim}, "
+              f"trainable: encoder={sum(p.numel() for p in self.feature_encoder.parameters())/1e3:.0f}K, "
+              f"diffusion_head={sum(p.numel() for p in self.diffusion_head.parameters())/1e3:.0f}K")
 
-    def predict(self, text_prompt, features_dict):
+    @torch.no_grad()
+    def _encode_images(self, images):
+        from PIL import Image
+        import numpy as np
+        if isinstance(images, np.ndarray):
+            images = Image.fromarray(images)
+        if isinstance(images, Image.Image):
+            images = [images]
+        if isinstance(images, list) and all(isinstance(x, np.ndarray) for x in images):
+            images = [Image.fromarray(x) for x in images]
+
+        pixel_values = torch.stack([self.img_preprocess(img) for img in images])
+        pixel_values = pixel_values.to(device=self.device, dtype=self.llm.dtype)
+
+        if hasattr(self.vision_encoder, 'pixel_values') or hasattr(self.vision_encoder, 'forward'):
+            visual_feat = self.vision_encoder(pixel_values)
+        else:
+            visual_feat = self.vision_encoder(pixel_values.to(self.llm.dtype))
+
+        if isinstance(visual_feat, tuple):
+            visual_feat = visual_feat[0]
+
+        if len(visual_feat.shape) == 3:
+            pass
+        elif len(visual_feat.shape) == 4:
+            b, c, h, w = visual_feat.shape
+            visual_feat = visual_feat.reshape(b, c, -1).permute(0, 2, 1)
+
+        visual_tokens = self.projector(visual_feat)
+        return visual_tokens
+
+    def forward(self, images, text_prompt, agent_features):
+        """
+        Args:
+            images: PIL Image, numpy array, or list thereof [B, H, W, 3]
+            text_prompt: str or list of str
+            agent_features: [B, N, 55] tensor
+        Returns:
+            hidden_states: [B, N, hidden_dim] for agent tokens
+        """
+        B = agent_features.shape[0]
+
+        visual_tokens = self._encode_images(images)
+
+        agent_embeds = self.feature_encoder(agent_features)
+
+        if isinstance(text_prompt, str):
+            text_prompt = [text_prompt]
+
+        encoded = self.tokenizer(
+            text_prompt, return_tensors="pt", padding=True,
+            truncation=True, max_length=1024,
+        ).to(self.device)
+        text_embeds = self.llm.get_input_embeddings()(encoded["input_ids"])
+
+        combined = torch.cat([visual_tokens, agent_embeds, text_embeds], dim=1)
+
+        outputs = self.llm(
+            inputs_embeds=combined,
+            output_hidden_states=True,
+        )
+
+        n_agent = agent_embeds.shape[1]
+        hidden = outputs.hidden_states[-1][:, visual_tokens.shape[1]:visual_tokens.shape[1] + n_agent, :]
+        return hidden
+
+    def predict(self, text_prompt, features_dict, images=None):
         if self.use_mock and hasattr(self, '_mock'):
             return self._mock.predict(text_prompt, features_dict)
 
         if not self._ready:
             n = features_dict.get("num_agents", 0)
-            return {str(i): [(0.0, 0.0)] * 8 for i in range(n)}
+            return {str(i): [(0.0, 0.0)] * self.chunk_size for i in range(n)}
+
+        agent_features = torch.tensor(
+            features_dict["agents"], dtype=self.llm.dtype,
+            device=self.device
+        ).unsqueeze(0)
 
         with torch.no_grad():
-            agent_features = torch.tensor(
-                features_dict["agents"], dtype=self.llm.dtype,
-                device=self.llm.device
-            ).unsqueeze(0)
-            agent_embeds = self.feature_encoder(agent_features)
+            hidden = self.forward(images, text_prompt, agent_features)
+            num_agents = features_dict.get("num_agents", 0)
+            hidden = hidden[:, :num_agents, :]
 
-            inputs = self.tokenizer(
-                text_prompt, return_tensors="pt", padding=True,
-                truncation=True, max_length=1024
-            ).to(self.llm.device)
-            text_embeds = self.llm.get_input_embeddings()(inputs["input_ids"])
-
-            combined = torch.cat([agent_embeds, text_embeds], dim=1)
-            outputs = self.llm(inputs_embeds=combined, output_hidden_states=True)
-            hidden = outputs.hidden_states[-1][:, :agent_embeds.shape[1], :]
-            logits = self.action_head(hidden)
+            waypoints_tensor = ddim_sample(
+                self.diffusion_head, hidden,
+                ddim_steps=self.diffusion_steps,
+                eta=0.0,
+            )
 
             num_agents = features_dict.get("num_agents", 0)
-            positions = [(agent_features[0, i, 0].item(), agent_features[0, i, 1].item())
-                         for i in range(num_agents)]
-            headings = [math.atan2(agent_features[0, i, 3].item(), agent_features[0, i, 2].item())
-                        for i in range(num_agents)]
+            positions = [
+                (agent_features[0, i, 0].item(), agent_features[0, i, 1].item())
+                for i in range(num_agents)
+            ]
+            headings = [
+                math.atan2(agent_features[0, i, 3].item(), agent_features[0, i, 2].item())
+                for i in range(num_agents)
+            ]
 
-            waypoints_list = self.action_head.decode_to_waypoints(logits, positions, headings)
-            return waypoints_list[0] if waypoints_list else {}
+            result = {}
+            for i in range(num_agents):
+                px, py = positions[i]
+                heading = headings[i]
+                wps = []
+                for j in range(self.chunk_size):
+                    local_dx = waypoints_tensor[0, i, j * 2].item()
+                    local_dy = waypoints_tensor[0, i, j * 2 + 1].item()
+                    gx = px + local_dx * math.cos(heading) - local_dy * math.sin(heading)
+                    gy = py + local_dx * math.sin(heading) + local_dy * math.cos(heading)
+                    wps.append((round(gx, 4), round(gy, 4)))
+                result[str(i)] = wps
+            return result
 
 
 def load_mock_policy(action_mode="continuous"):
@@ -212,5 +269,8 @@ def load_mock_policy(action_mode="continuous"):
 
 
 def load_openvla_policy(model_id="openvla/openvla-7b", device="cpu",
-                        action_mode="continuous"):
-    return OpenVLAPolicy(model_id=model_id, device=device, action_mode=action_mode)
+                        action_mode="continuous", chunk_size=8):
+    return OpenVLAPolicy(
+        model_id=model_id, device=device, action_mode=action_mode,
+        use_mock=False, chunk_size=chunk_size,
+    )

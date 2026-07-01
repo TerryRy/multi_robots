@@ -434,18 +434,22 @@ def start_simulator(args, receive_q = None, send_q = None):
     
     # Initialize VLA controller if --vla flag is set
     if cmd_args.use_vla or cmd_args.vla_collect:
+        use_mock = cmd_args.vla_model is None
         vla_config = {
             "chunk_size": 8,
             "steps_per_sec": config_data['simulator']['steps_per_sec'],
-            "use_mock": True,
+            "use_mock": use_mock,
             "collect_data": cmd_args.vla_collect,
             "action_mode": "continuous",
+            "model_id": cmd_args.vla_model or "openvla/openvla-7b",
+            "device": cmd_args.vla_device,
         }
         simulator.vla_controller = VLAController(agents, simulator.b2_objects, vla_config)
         if cmd_args.vla_collect:
-            print("Data collection mode: recording expert trajectories + mock VLA waypoints")
+            print("Data collection mode: recording expert trajectories")
         else:
-            print("VLA mode: using mock VLA policy (8-step waypoint chunks)")
+            model_str = cmd_args.vla_model or "mock"
+            print(f"VLA mode: using {model_str}")
     else:
         simulator.vla_controller = None
     

@@ -1,35 +1,31 @@
 import json
 import os
 import time
+from PIL import Image as PILImage
 
 
 class DataCollector:
     """
     Records (state, hand-written expert waypoint) pairs for VLA training.
-    Supports both discrete (BC) and continuous (Diffusion) action modes.
+    Saves top-down images as PNG alongside JSONL records.
     """
 
-    def __init__(self, save_dir="data/trajectories", action_mode="diffusion",
-                 chunk_size=8, collect_every_n_steps=4):
+    def __init__(self, save_dir="data/trajectories", action_mode="continuous",
+                 chunk_size=8, collect_every_n_steps=4, renderer=None):
         self.save_dir = save_dir
         self.action_mode = action_mode
         self.chunk_size = chunk_size
         self.collect_every_n_steps = collect_every_n_steps
+        self.renderer = renderer
         self._step_counter = 0
         self._buffer = []
         self._session_id = f"session_{int(time.time())}"
-        os.makedirs(save_dir, exist_ok=True)
+        self._img_dir = os.path.join(save_dir, self._session_id)
+        os.makedirs(self._img_dir, exist_ok=True)
+        self._frame_counter = 0
 
-    def collect(self, text_prompt, features, agents_data, expert_waypoints_dict):
-        """
-        Record one frame.
-
-        text_prompt: serialized text for VLA input
-        features: numerical feature dict
-        agents_data: list of per-agent dict (from StateSerializer)
-        expert_waypoints_dict: {agent_id: [(world_x, world_y), ...]}  from hand-written planner
-        """
-
+    def collect(self, text_prompt, features, agents_data, expert_waypoints_dict,
+                simulator=None):
         if len(expert_waypoints_dict) == 0:
             return
 
@@ -46,10 +42,20 @@ class DataCollector:
                 for aid, wps in expert_waypoints_dict.items()
             }
 
+        image_path = None
+        if self.renderer is not None and simulator is not None:
+            img_array = self.renderer.render(simulator)
+            img = PILImage.fromarray(img_array)
+            fname = f"frame_{self._frame_counter:06d}.png"
+            img.save(os.path.join(self._img_dir, fname))
+            image_path = os.path.join(self._session_id, fname)
+            self._frame_counter += 1
+
         record = {
             "text_prompt": text_prompt,
             "features": features,
             "target_action": target,
+            "image_path": image_path,
             "agent_count": len(agents_data),
             "timestamp": time.time(),
         }
