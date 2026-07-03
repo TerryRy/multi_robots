@@ -38,9 +38,9 @@ class VLADataset(Dataset):
         sample_ratios: list of sampling weights for each directory,
                        or None for uniform over all samples
         """
-        self.data_root = data_root
         self.samples = []
         self.sources = []
+        self.base_dirs = []
 
         for dir_idx, dir_path in enumerate(data_dirs):
             if not os.path.isabs(dir_path):
@@ -58,6 +58,7 @@ class VLADataset(Dataset):
                     for line in f:
                         self.samples.append(json.loads(line))
                         self.sources.append(dir_idx)
+                        self.base_dirs.append(abs_dir)
 
         if sample_ratios is not None:
             n_sources = len(data_dirs)
@@ -102,7 +103,7 @@ class VLADataset(Dataset):
         image = None
         image_path = record.get("image_path")
         if image_path:
-            full_path = os.path.join(self.data_root, image_path)
+            full_path = os.path.join(self.base_dirs[idx], image_path)
             if os.path.exists(full_path):
                 image = np.array(Image.open(full_path).convert("RGB"))
 

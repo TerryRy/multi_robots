@@ -5,3 +5,6 @@ __pycache__/
 .DS_Store
 src/data/
 models/
+.history/
+weights/
+src/data/trajectories/
