@@ -54,7 +54,9 @@ case $STAGE in
 esac
 
 # ==================== 环境设置 ====================
-# 不需要 HF 模型, 仅运行模拟器
+VENV_DIR=$HOME/ip/venv
+source ${VENV_DIR}/bin/activate
+
 export HF_HOME=$HOME/ip/models/hf_cache
 
 PROJ_DIR=$HOME/ip/dorabot_minions-master

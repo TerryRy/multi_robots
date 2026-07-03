@@ -28,7 +28,9 @@ shift  # 移除 stage, 剩余参数传递给 train.py
 EXTRA_ARGS="$@"
 
 # ==================== 环境设置 ====================
-# 使用 setup.sh 下载的持久化缓存
+VENV_DIR=$HOME/ip/venv
+source ${VENV_DIR}/bin/activate
+
 export HF_HOME=$HOME/ip/models/hf_cache
 
 PROJ_DIR=$HOME/ip/dorabot_minions-master
