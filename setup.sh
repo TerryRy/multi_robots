@@ -3,7 +3,6 @@
 #SBATCH -p normal
 #SBATCH -A mscitsuperpod
 #SBATCH -N 1
-#SBATCH --gpus-per-node=0
 #SBATCH --cpus-per-task=4
 #SBATCH -t 01:00:00
 #SBATCH --mem=32G
