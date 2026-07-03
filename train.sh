@@ -31,8 +31,6 @@ EXTRA_ARGS="$@"
 export HF_HOME=/tmp/${USER}/huggingface_cache
 mkdir -p ${HF_HOME}
 
-# source activate dora_env  # 取消注释以启用 conda/env
-
 PROJ_DIR=$HOME/ip/dorabot_minions-master
 DATA_DIR=${PROJ_DIR}/data/trajectories
 WEIGHT_DIR=${PROJ_DIR}/weights

@@ -35,12 +35,11 @@ echo "Running on node: $(hostname)"
 cd ${PROJ_DIR}
 
 # ==================== 1. Python 依赖 ====================
+# 注意: 使用 base conda 环境 (继承 CUDA 配置)
+# 不要创建 venv/conda env, 直接 pip install 到 base
 if [ "$MODEL_ONLY" != "--model-only" ]; then
     echo ""
-    echo "=== Installing Python dependencies ==="
-    python -m venv venv 2>/dev/null || true
-    source venv/bin/activate 2>/dev/null || true
-
+    echo "=== Installing Python dependencies (to base environment) ==="
     pip install --upgrade pip
     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
     pip install transformers accelerate peft bitsandbytes
