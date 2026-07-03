@@ -39,11 +39,11 @@ cd ${PROJ_DIR}
 # 不要创建 venv/conda env, 直接 pip install 到 base
 if [ "$MODEL_ONLY" != "--model-only" ]; then
     echo ""
-    echo "=== Installing Python dependencies (to base environment) ==="
-    pip install --upgrade pip
-    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+    echo "=== Installing Python dependencies ==="
+    pip install torch==2.1.0 torchvision==0.16.0 --index-url https://download.pytorch.org/whl/cu118
     pip install transformers accelerate peft bitsandbytes
-    pip install pybox2d pygame networkx shapely protobuf cmd2 matplotlib pillow
+    pip install box2d-py 2>/dev/null || pip install Box2D 2>/dev/null || pip install pybox2d 2>/dev/null || echo "WARNING: Box2D not installed; try: conda install -c conda-forge swig && pip install pybox2d"
+    pip install pygame networkx shapely protobuf cmd2 matplotlib pillow
 
     echo "Dependencies installed."
 fi
