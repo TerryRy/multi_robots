@@ -50,7 +50,10 @@ fi
 
 # ==================== 2. 下载 OpenVLA-7B ====================
 echo ""
-echo "=== Downloading OpenVLA-7B to ${MODEL_DIR} ==="
+echo "=== Downloading OpenVLA-7B to persistent HF cache ==="
+export HF_HOME=$HOME/ip/models/hf_cache
+mkdir -p ${HF_HOME}
+
 python -c "
 from transformers import AutoModel, AutoTokenizer
 import os
@@ -58,22 +61,26 @@ import os
 model_id = 'openvla/openvla-7b'
 cache_dir = os.environ['HF_HOME']
 
-print(f'Downloading {model_id} to cache ({cache_dir})...')
+print(f'Downloading {model_id} to persistent cache: {cache_dir}')
+print('(This will take a few minutes for a 7B model)...')
 
-# 下载并保存到持久目录
 model = AutoModel.from_pretrained(
     model_id,
     trust_remote_code=True,
     cache_dir=cache_dir,
     low_cpu_mem_usage=True,
 )
-model.save_pretrained('${MODEL_DIR}')
-del model
+print('Model downloaded OK. Params:', sum(p.numel() for p in model.parameters()) / 1e9, 'B')
 
 tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
-tokenizer.save_pretrained('${MODEL_DIR}')
+print('Tokenizer downloaded OK.')
 
-print(f'Model saved to ${MODEL_DIR}')
+# 验证缓存存在
+hub_path = os.path.join(cache_dir, 'hub')
+if os.path.exists(hub_path):
+    snaps = [d for d in os.listdir(hub_path) if d.startswith('models--')]
+    print(f'Cached models: {snaps}')
+print('Done.')
 "
 
 echo ""

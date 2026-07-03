@@ -54,8 +54,8 @@ case $STAGE in
 esac
 
 # ==================== 环境设置 ====================
-export HF_HOME=/tmp/${USER}/huggingface_cache
-mkdir -p ${HF_HOME}
+# 不需要 HF 模型, 仅运行模拟器
+export HF_HOME=$HOME/ip/models/hf_cache
 
 PROJ_DIR=$HOME/ip/dorabot_minions-master
 DATA_DIR=${PROJ_DIR}/data/trajectories

@@ -28,8 +28,8 @@ shift  # 移除 stage, 剩余参数传递给 train.py
 EXTRA_ARGS="$@"
 
 # ==================== 环境设置 ====================
-export HF_HOME=/tmp/${USER}/huggingface_cache
-mkdir -p ${HF_HOME}
+# 使用 setup.sh 下载的持久化缓存
+export HF_HOME=$HOME/ip/models/hf_cache
 
 PROJ_DIR=$HOME/ip/dorabot_minions-master
 DATA_DIR=${PROJ_DIR}/data/trajectories
@@ -43,7 +43,8 @@ nvidia-smi
 
 cd ${SRC_DIR}
 
-MODEL="$HOME/ip/models/openvla-7b"
+# 使用 HF 模型 ID, 从持久缓存加载
+MODEL="openvla/openvla-7b"
 EPOCHS=20
 BATCH=1
 LR=1e-4
