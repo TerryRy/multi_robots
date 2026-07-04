@@ -56,29 +56,33 @@ export HF_HOME=${CACHE_DIR}
 source ${VENV_DIR}/bin/activate
 
 python -c "
-from transformers import AutoModel, AutoTokenizer
-import os
+from transformers import AutoModelForVision2Seq, AutoTokenizer
+import os, glob
 
 model_id = 'openvla/openvla-7b'
 cache_dir = os.environ['HF_HOME']
-print(f'Downloading {model_id} to persistent cache: {cache_dir}')
-print('(This will take a few minutes for a 7B model)...')
+print(f'Downloading {model_id} to cache: {cache_dir}')
+print('(7B model, may take 5-10 minutes)...')
 
-model = AutoModel.from_pretrained(
+model = AutoModelForVision2Seq.from_pretrained(
     model_id,
     trust_remote_code=True,
     cache_dir=cache_dir,
     low_cpu_mem_usage=True,
+    torch_dtype='float16',
 )
-print('Model OK. Params:', sum(p.numel() for p in model.parameters()) / 1e9, 'B')
+print('Model OK. Params: {:.2f}B'.format(sum(p.numel() for p in model.parameters()) / 1e9))
 
 tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir=cache_dir)
 print('Tokenizer OK.')
 
-hub_path = os.path.join(cache_dir, 'hub')
-if os.path.exists(hub_path):
-    snaps = [d for d in os.listdir(hub_path) if d.startswith('models--')]
-    print(f'Cached: {snaps}')
+# 验证权重文件存在
+snap_dir = os.path.join(cache_dir, 'models--openvla--openvla-7b', 'snapshots')
+if os.path.exists(snap_dir):
+    for snap in os.listdir(snap_dir):
+        files = glob.glob(os.path.join(snap_dir, snap, '*'))
+        total_size = sum(os.path.getsize(f) for f in files if os.path.isfile(f)) / 1e9
+        print(f'  snapshot {snap}: {len(files)} files, {total_size:.1f}GB')
 "
 deactivate
 
