@@ -41,11 +41,10 @@ if [ "$MODEL_ONLY" != "--model-only" ]; then
     source ${VENV_DIR}/bin/activate
 
     echo "=== Installing Python packages ==="
-    pip install torch torchvision
-    pip install transformers accelerate peft bitsandbytes
-    pip install timm
+    pip install transformers accelerate peft bitsandbytes timm
     pip install box2d-py 2>/dev/null || pip install Box2D 2>/dev/null || pip install pybox2d 2>/dev/null || echo "WARNING: Box2D not installed; try: conda install -c conda-forge swig && pip install pybox2d"
     pip install pygame networkx shapely protobuf cmd2 matplotlib pillow
+    echo "PyTorch: inheriting from base (--system-site-packages)"
     deactivate
     echo "Dependencies installed."
 fi
