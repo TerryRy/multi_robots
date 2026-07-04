@@ -57,6 +57,7 @@ export HF_HOME=${CACHE_DIR}
 source ${VENV_DIR}/bin/activate
 
 python -c "
+import torch
 from transformers import AutoModelForVision2Seq, AutoTokenizer
 import os, glob
 
