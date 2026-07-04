@@ -78,11 +78,11 @@ class OpenVLAPolicy:
         self._load_model()
 
     def _load_model(self):
-        from transformers import AutoModel, AutoTokenizer, AutoImageProcessor
+        from transformers import AutoModelForVision2Seq, AutoTokenizer, AutoImageProcessor
 
         print(f"Loading OpenVLA-7B from {self.model_id}...")
 
-        full_model = AutoModel.from_pretrained(
+        full_model = AutoModelForVision2Seq.from_pretrained(
             self.model_id,
             trust_remote_code=True,
             torch_dtype=torch.float16 if self.device != "cpu" else torch.float32,

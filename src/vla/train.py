@@ -188,13 +188,13 @@ def train(args):
                 load_in_4bit=True, bnb_4bit_compute_dtype=dtype,
             )
 
-        from transformers import AutoTokenizer, AutoModel
+        from transformers import AutoTokenizer, AutoModelForVision2Seq
         tokenizer = AutoTokenizer.from_pretrained(args.model)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
 
         print(f"Loading OpenVLA model: {args.model}")
-        full_model = AutoModel.from_pretrained(args.model, **load_kwargs)
+        full_model = AutoModelForVision2Seq.from_pretrained(args.model, **load_kwargs)
 
         if hasattr(full_model, 'vision_encoder'):
             vision_encoder = full_model.vision_encoder
