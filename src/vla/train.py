@@ -264,7 +264,9 @@ def train(args):
     diffusion_head = DiffusionActionHead(
         hidden_dim=hidden_dim, chunk_size=args.chunk_size,
     )
-    diffusion_head = diffusion_head.to(device=device, dtype=dtype)
+    diffusion_head = diffusion_head.to(device=device, dtype=torch.float32)
+    for p in diffusion_head.parameters():
+        p.data = p.data.to(torch.float32)
 
     # ---- Load checkpoints (incremental training) ----
     if args.load_encoder:
@@ -309,7 +311,8 @@ def train(args):
         num_training_steps=args.epochs * len(loader),
     )
 
-    # ---- Training loop (DDPM diffusion loss) ----
+    # ---- Training loop (DDPM diffusion loss + AMP) ----
+    scaler = torch.cuda.amp.GradScaler() if device.type == "cuda" else None
     print(f"\nTraining: {args.epochs} epochs x {len(loader)} steps/batch={args.batch_size}")
     global_step = 0
     for epoch in range(args.epochs):
@@ -366,7 +369,7 @@ def train(args):
             outputs = llm(inputs_embeds=combined, output_hidden_states=True)
 
             n_agent = agent_embeds.shape[1]
-            hidden = outputs.hidden_states[-1][:, n_vis_tokens:n_vis_tokens + n_agent, :]
+            hidden = outputs.hidden_states[-1][:, n_vis_tokens:n_vis_tokens + n_agent, :].float()
 
             n_active = target_tensor.shape[1]
             hidden = hidden[:, :n_active, :]
@@ -376,13 +379,22 @@ def train(args):
             loss = compute_diffusion_loss(diffusion_head, target_flat, hidden)
 
             optimizer.zero_grad()
-            loss.backward()
-
-            grad_params = list(encoder.parameters()) + list(diffusion_head.parameters())
-            if args.use_lora:
-                grad_params += [p for p in llm.parameters() if p.requires_grad]
-            torch.nn.utils.clip_grad_norm_(grad_params, args.max_grad_norm)
-            optimizer.step()
+            if scaler is not None:
+                scaler.scale(loss).backward()
+                grad_params = list(encoder.parameters()) + list(diffusion_head.parameters())
+                if args.use_lora:
+                    grad_params += [p for p in llm.parameters() if p.requires_grad]
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(grad_params, args.max_grad_norm)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                grad_params = list(encoder.parameters()) + list(diffusion_head.parameters())
+                if args.use_lora:
+                    grad_params += [p for p in llm.parameters() if p.requires_grad]
+                torch.nn.utils.clip_grad_norm_(grad_params, args.max_grad_norm)
+                optimizer.step()
             scheduler.step()
 
             total_loss += loss.item()
