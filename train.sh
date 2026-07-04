@@ -50,7 +50,7 @@ cd ${SRC_DIR}
 MODEL="openvla/openvla-7b"
 EPOCHS=20
 BATCH=1
-LR=1e-4
+LR=3e-5
 
 # 拼接基础参数
 BASE_ARGS="--model ${MODEL} --use-lora --lora-rank 128 --epochs ${EPOCHS} --batch-size ${BATCH} --lr ${LR}"

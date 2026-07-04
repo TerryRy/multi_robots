@@ -69,6 +69,8 @@ class DiffusionActionHead(nn.Module):
             nn.ReLU(),
             nn.Linear(d_model, chunk_size * 2),
         )
+        nn.init.zeros_(self.output_proj[-1].weight)
+        nn.init.zeros_(self.output_proj[-1].bias)
 
     def forward(self, x_t, t, condition):
         B, N, _ = x_t.shape
