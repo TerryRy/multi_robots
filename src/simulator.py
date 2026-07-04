@@ -326,8 +326,8 @@ class Simulator(b2ContactListener):
                     print(str(self.get_simulator_time()/60.0)+' minutes passed in simulation world')
                     end_realworld_time = time.time()
                     print(int(end_realworld_time - start_realworld_time), "seconds passed in real world")
-                    if self.get_simulator_time() > 0:
-                        pph = float(self.task_count)/self.get_simulator_time()*3600
+                    sim_t = self.get_simulator_time()
+                    pph = float(self.task_count) / sim_t * 3600 if sim_t > 0 else 0.0
                     print("PPH: {:.0f} | Collisions AA: {} AO: {}".format(
                         pph, self.agent_agent_collisions, self.agent_static_collisions))
                     print("---------------------------------------------------------------------")
