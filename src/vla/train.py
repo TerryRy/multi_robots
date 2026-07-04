@@ -105,7 +105,8 @@ class VLADataset(Dataset):
         if image_path:
             full_path = os.path.join(self.base_dirs[idx], image_path)
             if os.path.exists(full_path):
-                image = np.array(Image.open(full_path).convert("RGB"))
+                from PIL import Image as PILImage
+                image = np.array(PILImage.open(full_path).convert("RGB"))
 
         return agents_feat, text_prompt, target_tensor, image
 
