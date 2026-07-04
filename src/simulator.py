@@ -405,11 +405,8 @@ def start_simulator(args, receive_q = None, send_q = None):
     # assign local and global planner according to cmd input
     general_local_planner = process_local_planner_cmd(cmd_args.local_planner)
     general_global_planner = process_global_planner_cmd(cmd_args.global_planner)
-    if cmd_args.vla_collect:
-        if general_global_planner is None:
-            general_global_planner = process_global_planner_cmd("LayeredAStar")
-        if general_local_planner == DullPlanner:
-            general_local_planner = DullPlanner
+    # VLA-collect: keep default planners (no global planner = direct navigation)
+    # Do NOT force LayeredAStar — it causes path slowdowns on small maps
 
     # Create agents
     # The size of agents should be at least one gird

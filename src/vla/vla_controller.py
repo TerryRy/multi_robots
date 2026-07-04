@@ -55,6 +55,20 @@ class VLAController:
     def step(self, simulator):
         self._step_counter += 1
 
+        if self.collect_data:
+            # Data collection mode: only collect expert data at chunk intervals
+            # Do NOT run model inference (no render, no predict)
+            if self._data_collector is not None and self._step_counter % self.chunk_size == 0:
+                text_prompt, features, agents_data = self.serializer.serialize(simulator)
+                img = self.renderer.render(simulator)
+                expert_waypoints = self._collect_expert_waypoints(simulator)
+                if expert_waypoints:
+                    self._data_collector.collect(
+                        text_prompt, features, agents_data, expert_waypoints,
+                        simulator=simulator,
+                    )
+            return
+
         needs_inference = (self._step_counter - self._last_vla_call_step) >= self.chunk_size
         needs_inference |= any(not t.has_waypoints() for t in self.trackers.values())
 
@@ -71,16 +85,6 @@ class VLAController:
                     has_wps = trk.has_waypoints() if trk else False
                     print(f"  VLA Debug: Agent {ag['id']} pos=({ag['position'][0]:.1f},{ag['position'][1]:.1f}) "
                           f"dest={ag['destination']} has_wps={has_wps} n_wp={len(trk.waypoint_queue) if trk else 0}")
-
-            if self._data_collector is not None:
-                expert_waypoints = self._collect_expert_waypoints(simulator)
-                if expert_waypoints:
-                    self._data_collector.collect(
-                        text_prompt, features, agents_data, expert_waypoints,
-                        simulator=simulator,
-                    )
-                if DEBUG:
-                    print(f"  DataCollector: step={self._step_counter} expert_agents={list(expert_waypoints.keys())}")
 
             self._last_vla_call_step = self._step_counter
 
