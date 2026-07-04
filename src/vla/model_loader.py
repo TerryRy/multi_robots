@@ -148,7 +148,7 @@ class OpenVLAPolicy:
 
         self.diffusion_head = DiffusionActionHead(
             hidden_dim=hidden_dim, chunk_size=self.chunk_size,
-        ).to(device=self.device, dtype=torch.float32)
+        ).to(device=self.device, dtype=self.llm.dtype)
 
         import torchvision.transforms as T
         self.img_preprocess = T.Compose([
