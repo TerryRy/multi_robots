@@ -11,8 +11,9 @@ class SinusoidalTimeEmbedding(nn.Module):
 
     def forward(self, t):
         half = self.dim // 2
-        freqs = torch.exp(-math.log(10000.0) * torch.arange(half, device=t.device) / half)
-        emb = t[:, None].float() * freqs[None, :]
+        dtype = t.dtype
+        freqs = torch.exp(-math.log(10000.0) * torch.arange(half, device=t.device, dtype=dtype) / half)
+        emb = t[:, None] * freqs[None, :]
         return torch.cat([torch.sin(emb), torch.cos(emb)], dim=-1)
 
 
@@ -71,12 +72,13 @@ class DiffusionActionHead(nn.Module):
 
     def forward(self, x_t, t, condition):
         B, N, _ = x_t.shape
+        dtype = next(self.parameters()).dtype
 
-        t_emb = self.time_embed(t)
+        t_emb = self.time_embed(t.to(dtype))
         t_emb = self.time_proj(t_emb[:, None, :].expand(-1, N, -1))
 
-        x = self.input_proj(x_t)
-        c = self.cond_proj(condition)
+        x = self.input_proj(x_t.to(dtype))
+        c = self.cond_proj(condition.to(dtype))
         h = x + t_emb
 
         for block in self.blocks:
