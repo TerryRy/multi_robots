@@ -70,7 +70,7 @@ model = AutoModelForVision2Seq.from_pretrained(
     trust_remote_code=True,
     cache_dir=cache_dir,
     low_cpu_mem_usage=True,
-    torch_dtype='float16',
+    torch_dtype=torch.float16,
 )
 print('Model OK. Params: {:.2f}B'.format(sum(p.numel() for p in model.parameters()) / 1e9))
 
