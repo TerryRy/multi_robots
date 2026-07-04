@@ -24,7 +24,7 @@ MODEL_ONLY=${1:-""}
 
 # ==================== 路径 ====================
 export HF_TOKEN="${HF_TOKEN:?需要设置 HF_TOKEN}"
-PROJ_DIR=$HOME/ip/dorabot_minions-master
+PROJ_DIR=$HOME/ip/multi_robots
 VENV_DIR=$HOME/ip/venv
 CACHE_DIR=$HOME/ip/models/hf_cache
 mkdir -p ${CACHE_DIR}
@@ -43,7 +43,7 @@ if [ "$MODEL_ONLY" != "--model-only" ]; then
     echo "=== Installing Python packages ==="
     # NVIDIA H800, Driver 570 → CUDA 12.x
     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124 2>&1 | tail -3
-    pip install transformers accelerate peft bitsandbytes timm
+    pip install "transformers>=4.37.0,<4.40.0" accelerate peft bitsandbytes "timm>=0.9.10,<1.0.0"
     pip install box2d-py 2>/dev/null || pip install Box2D 2>/dev/null || pip install pybox2d 2>/dev/null || echo "WARNING: Box2D not installed; try: conda install -c conda-forge swig && pip install pybox2d"
     pip install pygame networkx shapely protobuf cmd2 matplotlib pillow
     deactivate

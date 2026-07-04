@@ -33,7 +33,7 @@ source ${VENV_DIR}/bin/activate
 
 export HF_HOME=$HOME/ip/models/hf_cache
 
-PROJ_DIR=$HOME/ip/dorabot_minions-master
+PROJ_DIR=$HOME/ip/multi_robots
 DATA_DIR=${PROJ_DIR}/data/trajectories
 WEIGHT_DIR=${PROJ_DIR}/weights
 SRC_DIR=${PROJ_DIR}/src
