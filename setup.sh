@@ -41,10 +41,17 @@ if [ "$MODEL_ONLY" != "--model-only" ]; then
     source ${VENV_DIR}/bin/activate
 
     echo "=== Installing Python packages ==="
+    CUDA_VER=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 | cut -d'.' -f1)
+    if [ "$CUDA_VER" = "525" ] || [ "$CUDA_VER" = "535" ]; then
+        TORCH_URL="https://download.pytorch.org/whl/cu118"
+    else
+        TORCH_URL="https://download.pytorch.org/whl/cu121"
+    fi
+    echo "Installing torch (CUDA driver version detected: ${CUDA_VER:-unknown})..."
+    pip install torch torchvision --index-url $TORCH_URL 2>&1 | tail -3
     pip install transformers accelerate peft bitsandbytes timm
     pip install box2d-py 2>/dev/null || pip install Box2D 2>/dev/null || pip install pybox2d 2>/dev/null || echo "WARNING: Box2D not installed; try: conda install -c conda-forge swig && pip install pybox2d"
     pip install pygame networkx shapely protobuf cmd2 matplotlib pillow
-    echo "PyTorch: inheriting from base (--system-site-packages)"
     deactivate
     echo "Dependencies installed."
 fi
