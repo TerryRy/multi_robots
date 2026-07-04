@@ -11,6 +11,7 @@
 #SBATCH --mail-type=NONE
 
 VENV_DIR=$HOME/ip/venv
+export PYTHONUNBUFFERED=1
 source ${VENV_DIR}/bin/activate 2>/dev/null
 
 echo "=== Python ==="

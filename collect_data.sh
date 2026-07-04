@@ -58,6 +58,7 @@ VENV_DIR=$HOME/ip/venv
 source ${VENV_DIR}/bin/activate
 
 export HF_HOME=$HOME/ip/models/hf_cache
+export PYTHONUNBUFFERED=1
 
 PROJ_DIR=$HOME/ip/multi_robots
 DATA_DIR=${PROJ_DIR}/data/trajectories

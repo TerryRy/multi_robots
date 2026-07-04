@@ -54,6 +54,7 @@ fi
 echo ""
 echo "=== Downloading OpenVLA-7B ==="
 export HF_HOME=${CACHE_DIR}
+export PYTHONUNBUFFERED=1
 source ${VENV_DIR}/bin/activate
 
 python -c "
