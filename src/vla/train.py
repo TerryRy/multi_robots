@@ -113,8 +113,8 @@ class VLADataset(Dataset):
 
 def train(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dtype = torch.float16 if device.type == "cuda" else torch.float32
-    print(f"Device: {device} | Dtype: {dtype}")
+    dtype = torch.float32
+    print(f"Device: {device} | Dtype: {dtype} (unified float32)")
 
     # ---- Data directories & curriculum mixing ----
     data_mix = args.data_mix
@@ -256,6 +256,8 @@ def train(args):
         hidden_dim = llm.config.hidden_size
         if not hasattr(llm, 'device_map') or llm.device_map is None:
             llm.to(device)
+        llm = llm.float()
+        print("LLM converted to float32")
 
     # ---- MLP encoder + Diffusion head ----
     encoder = AgentFeatureEncoder(input_dim=55, hidden_dim=512, output_dim=hidden_dim)
@@ -311,8 +313,7 @@ def train(args):
         num_training_steps=args.epochs * len(loader),
     )
 
-    # ---- Training loop (DDPM diffusion loss + AMP) ----
-    scaler = torch.cuda.amp.GradScaler() if device.type == "cuda" else None
+    # ---- Training loop (DDPM diffusion loss, unified float32) ----
     print(f"\nTraining: {args.epochs} epochs x {len(loader)} steps/batch={args.batch_size}")
     global_step = 0
     for epoch in range(args.epochs):
@@ -369,7 +370,7 @@ def train(args):
             outputs = llm(inputs_embeds=combined, output_hidden_states=True)
 
             n_agent = agent_embeds.shape[1]
-            hidden = outputs.hidden_states[-1][:, n_vis_tokens:n_vis_tokens + n_agent, :].float()
+            hidden = outputs.hidden_states[-1][:, n_vis_tokens:n_vis_tokens + n_agent, :]
 
             n_active = target_tensor.shape[1]
             hidden = hidden[:, :n_active, :]
@@ -379,22 +380,12 @@ def train(args):
             loss = compute_diffusion_loss(diffusion_head, target_flat, hidden)
 
             optimizer.zero_grad()
-            if scaler is not None:
-                scaler.scale(loss).backward()
-                grad_params = list(encoder.parameters()) + list(diffusion_head.parameters())
-                if args.use_lora:
-                    grad_params += [p for p in llm.parameters() if p.requires_grad]
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(grad_params, args.max_grad_norm)
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                loss.backward()
-                grad_params = list(encoder.parameters()) + list(diffusion_head.parameters())
-                if args.use_lora:
-                    grad_params += [p for p in llm.parameters() if p.requires_grad]
-                torch.nn.utils.clip_grad_norm_(grad_params, args.max_grad_norm)
-                optimizer.step()
+            loss.backward()
+            grad_params = list(encoder.parameters()) + list(diffusion_head.parameters())
+            if args.use_lora:
+                grad_params += [p for p in llm.parameters() if p.requires_grad]
+            torch.nn.utils.clip_grad_norm_(grad_params, args.max_grad_norm)
+            optimizer.step()
             scheduler.step()
 
             total_loss += loss.item()
