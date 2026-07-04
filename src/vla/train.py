@@ -196,32 +196,43 @@ def train(args):
         print(f"Loading OpenVLA model: {args.model}")
         full_model = AutoModelForVision2Seq.from_pretrained(args.model, **load_kwargs)
 
-        if hasattr(full_model, 'vision_encoder'):
-            vision_encoder = full_model.vision_encoder
-        elif hasattr(full_model, 'vision_tower'):
-            vision_encoder = full_model.vision_tower
+        for attr in ['vision_encoder', 'vision_tower', 'vision_backbone']:
+            if hasattr(full_model, attr):
+                vision_encoder = getattr(full_model, attr)
+                break
         else:
-            raise RuntimeError("Cannot find vision_encoder in checkpoint")
+            raise RuntimeError(
+                f"Cannot find vision_encoder in checkpoint. "
+                f"Available: {[a for a in dir(full_model) if not a.startswith('_')]}"
+            )
 
         for p in vision_encoder.parameters():
             p.requires_grad = False
         vision_encoder.eval()
 
-        if hasattr(full_model, 'projector'):
-            projector = full_model.projector
+        for attr in ['projector', 'connector', 'vision_projector']:
+            if hasattr(full_model, attr):
+                projector = getattr(full_model, attr)
+                break
         else:
-            raise RuntimeError("Cannot find projector in checkpoint")
+            raise RuntimeError(
+                f"Cannot find projector in checkpoint. "
+                f"Available: {[a for a in dir(full_model) if not a.startswith('_')]}"
+            )
 
         for p in projector.parameters():
             p.requires_grad = False
         projector.eval()
 
-        if hasattr(full_model, "language_model"):
-            llm = full_model.language_model
-        elif hasattr(full_model, "model"):
-            llm = full_model.model
+        for attr in ["language_model", "model", "llm", "llm_backbone", "lm_backbone"]:
+            if hasattr(full_model, attr):
+                llm = getattr(full_model, attr)
+                break
         else:
-            raise RuntimeError("Cannot find language_model in checkpoint")
+            raise RuntimeError(
+                f"Cannot find language_model in checkpoint. "
+                f"Available: {[a for a in dir(full_model) if not a.startswith('_')]}"
+            )
 
         del full_model
 

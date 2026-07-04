@@ -90,32 +90,43 @@ class OpenVLAPolicy:
             low_cpu_mem_usage=True,
         )
 
-        if hasattr(full_model, 'vision_encoder'):
-            self.vision_encoder = full_model.vision_encoder
-        elif hasattr(full_model, 'vision_tower'):
-            self.vision_encoder = full_model.vision_tower
+        for attr in ['vision_encoder', 'vision_tower', 'vision_backbone']:
+            if hasattr(full_model, attr):
+                self.vision_encoder = getattr(full_model, attr)
+                break
         else:
-            raise RuntimeError("Cannot find vision_encoder in OpenVLA checkpoint")
+            raise RuntimeError(
+                f"Cannot find vision_encoder in OpenVLA checkpoint. "
+                f"Available: {[a for a in dir(full_model) if not a.startswith('_')]}"
+            )
 
         for p in self.vision_encoder.parameters():
             p.requires_grad = False
         self.vision_encoder.eval()
 
-        if hasattr(full_model, 'projector'):
-            self.projector = full_model.projector
+        for attr in ['projector', 'connector', 'vision_projector']:
+            if hasattr(full_model, attr):
+                self.projector = getattr(full_model, attr)
+                break
         else:
-            raise RuntimeError("Cannot find projector in OpenVLA checkpoint")
+            raise RuntimeError(
+                f"Cannot find projector in OpenVLA checkpoint. "
+                f"Available: {[a for a in dir(full_model) if not a.startswith('_')]}"
+            )
 
         for p in self.projector.parameters():
             p.requires_grad = False
         self.projector.eval()
 
-        if hasattr(full_model, 'language_model'):
-            self.llm = full_model.language_model
-        elif hasattr(full_model, 'model'):
-            self.llm = full_model.model
+        for attr in ['language_model', 'model', 'llm', 'llm_backbone', 'lm_backbone']:
+            if hasattr(full_model, attr):
+                self.llm = getattr(full_model, attr)
+                break
         else:
-            raise RuntimeError("Cannot find language model in OpenVLA checkpoint")
+            raise RuntimeError(
+                f"Cannot find language model in OpenVLA checkpoint. "
+                f"Available: {[a for a in dir(full_model) if not a.startswith('_')]}"
+            )
 
         del full_model
         self.llm.to(self.device)
