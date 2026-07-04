@@ -121,8 +121,13 @@ class StateSerializer:
 
         task_count = getattr(simulator, 'task_count', 0)
         sim_time = getattr(simulator, 'time', 0)
+        aa_col = getattr(simulator, 'agent_agent_collisions', 0)
+        ao_col = getattr(simulator, 'agent_static_collisions', 0)
 
-        text_prompt = self._build_text_prompt(agents_data, ports_data, obstacle_data, task_count, sim_time)
+        text_prompt = self._build_text_prompt(
+            agents_data, ports_data, obstacle_data, task_count, sim_time,
+            aa_col, ao_col,
+        )
         features = self._build_features(agents_data, ports_data, obstacle_data)
 
         return text_prompt, features, agents_data
@@ -172,7 +177,8 @@ class StateSerializer:
         angle = idx / 511.0 * 180.0 - 90
         return {"dist": min_val, "rel_angle_deg": angle}
 
-    def _build_text_prompt(self, agents, ports, obstacles, task_count, sim_time):
+    def _build_text_prompt(self, agents, ports, obstacles, task_count, sim_time,
+                           aa_col=0, ao_col=0):
 
         def _pad(agents_list, key):
             result = []
@@ -183,7 +189,8 @@ class StateSerializer:
             return result
 
         parts = []
-        parts.append(f"Timestamp: {sim_time:.2f}s | Packages delivered: {int(task_count)}")
+        parts.append(f"Timestamp: {sim_time:.2f}s | Packages: {int(task_count)} | "
+                     f"Collisions: AA={aa_col} AO={ao_col}")
 
         agent_lines = []
         for a in agents:

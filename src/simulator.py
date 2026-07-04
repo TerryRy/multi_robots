@@ -80,12 +80,15 @@ class Simulator(b2ContactListener):
         self.timespan = 0
         self.time = 0
         self.task_count = 0
+        self.agent_agent_collisions = 0
+        self.agent_static_collisions = 0
         self.start_time = 0
         self.heatmap_data = []
         self.agent_global_planner = ''
         self.agent_local_planner = ''
         '''disable gravity, set contact listener for sensor using'''
-        self.world = b2World(gravity=(0,0), doSleep=True, contactListener = SensorContactListener()) 
+        self.world = b2World(gravity=(0,0), doSleep=True, contactListener = SensorContactListener())
+        self.world.contactListener.simulator = self
         self.ray_length_list = []
         self.ray_line_list = []
         self.free_control = cmd_args.free
@@ -93,6 +96,14 @@ class Simulator(b2ContactListener):
         self.agent_details = cmd_args.agent_details
         self.receive_q = None # is used to receive the cmd from controller
         self.send_q = None
+    def record_collision(self, fixtureA, fixtureB):
+        is_agent_a = fixtureA.filterData.categoryBits == EntityCategory.agent.value
+        is_agent_b = fixtureB.filterData.categoryBits == EntityCategory.agent.value
+        if is_agent_a and is_agent_b:
+            self.agent_agent_collisions += 1
+        elif is_agent_a or is_agent_b:
+            self.agent_static_collisions += 1
+
     # could be loaded from a json file as well.
     def set_environment(self, obstacle_tuples_list = []):
         self.environment = Environment()
@@ -268,8 +279,11 @@ class Simulator(b2ContactListener):
         Simulator.step_counter += 1
         if Simulator.step_counter % 10 == 0:
             self.heatmap_data.extend([(agent.position.y, agent.position.x) for agent in self.agents])
-        if self.time % 60 ==0 and self.task_count >0:
-            print("Current PPH:", self.task_count/self.time*3600)
+        if self.time % 60 == 0:
+            pph = float(self.task_count)/max(self.time, 1)*3600
+            lap = float(self.task_count)/max(self.time/60.0, 1)
+            print("PPH: {:.0f} | Collisions AA: {} AO: {}".format(
+                pph, self.agent_agent_collisions, self.agent_static_collisions))
 
     """RayCast for sensor using"""
     def ray_cast_callback(self, agent_body, angle):
@@ -313,7 +327,9 @@ class Simulator(b2ContactListener):
                     end_realworld_time = time.time()
                     print(int(end_realworld_time - start_realworld_time), "seconds passed in real world")
                     if self.get_simulator_time() > 0:
-                        print("PPH is", float(self.task_count)/self.get_simulator_time()*3600, "now")
+                        pph = float(self.task_count)/self.get_simulator_time()*3600
+                    print("PPH: {:.0f} | Collisions AA: {} AO: {}".format(
+                        pph, self.agent_agent_collisions, self.agent_static_collisions))
                     print("---------------------------------------------------------------------")
                 self.step()
     def get_simulator_time(self):

@@ -49,8 +49,22 @@ class SensorRayCast(b2RayCastCallback):
 
 '''This is a contact Listener for sensor using'''
 class SensorContactListener(b2ContactListener):
+    def __init__(self):
+        b2ContactListener.__init__(self)
+        self.simulator = None
+
     '''override the begin contact of Box2D'''
     def BeginContact(self, contact):
+        fixtureA = contact.fixtureA
+        fixtureB = contact.fixtureB
+
+        # Physical collision (neither is a sensor)
+        if not fixtureA.sensor and not fixtureB.sensor:
+            if self.simulator is not None:
+                self.simulator.record_collision(fixtureA, fixtureB)
+            return
+
+        # Sensor detection (one is sensor, the other is not)
         is_detected, detected_object, radar = self.__get_radar_and_object(contact)
         if is_detected:
             radar.radar_acquired_object(detected_object)
@@ -58,8 +72,6 @@ class SensorContactListener(b2ContactListener):
     def EndContact(self, contact):
         is_detected, detected_object, radar = self.__get_radar_and_object(contact)
         if is_detected:
-            if type(detected_object) == 'Agent':
-                print(type(detected_object))
             radar.radar_lost_object(detected_object)
             
     '''This function is a filter to get the object which is not sensor '''
