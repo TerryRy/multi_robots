@@ -14,13 +14,16 @@
 # 数据收集: 运行 hand-written planners 生成训练数据
 # 不需要 HF Token (仅 simulator, 不涉及模型下载)
 #
-#   sbatch collect_data.sh <stage> [sim_time]
+#   sbatch collect_data.sh <stage> [sim_minutes]
 #     stage:  1 | 2 | 3 | 4
-#     sim_time: 模拟秒数
+#     sim_minutes: 模拟分钟数
+#
+#     默认值 (10-15 分钟可收集 5000~10000 条):
+#     Stage 1: 10min | Stage 2: 8min | Stage 3: 10min | Stage 4: 10min
 #
 # 示例:
-#   sbatch collect_data.sh 1          # Stage 1, 300s
-#   sbatch collect_data.sh 2 600      # Stage 2, 600s
+#   sbatch collect_data.sh 1          # Stage 1, 10min
+#   sbatch collect_data.sh 2 15       # Stage 2, 15min
 # =============================================
 
 STAGE=${1:?"Usage: $0 <stage> [sim_time]; stage=1|2|3|4"}
@@ -30,22 +33,22 @@ case $STAGE in
   1)
     AGENTS=2; LOAD_PORTS=2; UNLOAD_PORTS=2
     MAP_W=20; MAP_H=12
-    SIM_TIME=${SIM_TIME:-300}
+    SIM_TIME=${SIM_TIME:-10}
     ;;
   2)
     AGENTS=4; LOAD_PORTS=4; UNLOAD_PORTS=4
     MAP_W=30; MAP_H=16
-    SIM_TIME=${SIM_TIME:-400}
+    SIM_TIME=${SIM_TIME:-8}
     ;;
   3)
     AGENTS=5; LOAD_PORTS=5; UNLOAD_PORTS=5
     MAP_W=40; MAP_H=20
-    SIM_TIME=${SIM_TIME:-500}
+    SIM_TIME=${SIM_TIME:-10}
     ;;
   4)
     AGENTS=7; LOAD_PORTS=7; UNLOAD_PORTS=7
     MAP_W=45; MAP_H=20
-    SIM_TIME=${SIM_TIME:-600}
+    SIM_TIME=${SIM_TIME:-10}
     ;;
   *)
     echo "Error: stage must be 1, 2, 3, or 4 (got: $STAGE)"
