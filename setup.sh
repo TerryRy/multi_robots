@@ -43,7 +43,7 @@ if [ "$MODEL_ONLY" != "--model-only" ]; then
     echo "=== Installing Python packages ==="
     # NVIDIA H800, Driver 570 → CUDA 12.x
     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124 2>&1 | tail -3
-    pip install "transformers>=4.37.0,<4.40.0" accelerate peft bitsandbytes "timm>=0.9.10,<1.0.0"
+    pip install "transformers>=4.37.0,<4.40.0" accelerate "peft>=0.10.0,<0.13.0" bitsandbytes "timm>=0.9.10,<1.0.0"
     pip install box2d-py 2>/dev/null || pip install Box2D 2>/dev/null || pip install pybox2d 2>/dev/null || echo "WARNING: Box2D not installed; try: conda install -c conda-forge swig && pip install pybox2d"
     pip install pygame networkx shapely "protobuf<4.0" cmd2 matplotlib pillow
     deactivate
