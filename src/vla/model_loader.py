@@ -172,6 +172,7 @@ class OpenVLAPolicy:
             images = [Image.fromarray(x) for x in images]
 
         pixel_values = torch.stack([self.img_preprocess(img) for img in images])
+        pixel_values = torch.cat([pixel_values, pixel_values], dim=1)
         pixel_values = pixel_values.to(device=self.device, dtype=self.llm.dtype)
 
         if hasattr(self.vision_encoder, 'pixel_values') or hasattr(self.vision_encoder, 'forward'):

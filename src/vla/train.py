@@ -336,6 +336,7 @@ def train(args):
                             pil_img = PILImage.new("RGB", (224, 224), (30, 30, 30))
                         pixel_values.append(img_preprocess(pil_img))
                     pixel_values = torch.stack(pixel_values).to(device=device, dtype=dtype)
+                    pixel_values = torch.cat([pixel_values, pixel_values], dim=1)
 
                     visual_feat = vision_encoder(pixel_values)
                     if isinstance(visual_feat, tuple):
