@@ -40,10 +40,12 @@ class AgentFeatureEncoder(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dim, output_dim),
         )
+        self.norm = nn.LayerNorm(output_dim)
 
     def forward(self, agent_features):
         b, n, d = agent_features.shape
-        return self.mlp(agent_features.reshape(b * n, d)).reshape(b, n, -1)
+        x = self.mlp(agent_features.reshape(b * n, d)).reshape(b, n, -1)
+        return self.norm(x)
 
 
 class OpenVLAPolicy:
