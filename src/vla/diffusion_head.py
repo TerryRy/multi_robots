@@ -11,8 +11,8 @@ class SinusoidalTimeEmbedding(nn.Module):
 
     def forward(self, t):
         half = self.dim // 2
-        dtype = t.dtype
-        freqs = torch.exp(-math.log(10000.0) * torch.arange(half, device=t.device, dtype=dtype) / half)
+        freqs = torch.exp(-math.log(10000.0) * torch.arange(half, device=t.device) / half)
+        freqs = freqs.to(t.dtype)
         emb = t[:, None] * freqs[None, :]
         return torch.cat([torch.sin(emb), torch.cos(emb)], dim=-1)
 
@@ -80,7 +80,9 @@ class DiffusionActionHead(nn.Module):
         t_emb = self.time_proj(t_emb[:, None, :].expand(-1, N, -1))
 
         x = self.input_proj(x_t.to(dtype))
-        c = self.cond_proj(condition.to(dtype))
+        c = condition.to(dtype)
+        c = c / (c.norm(dim=-1, keepdim=True) + 1e-8)
+        c = self.cond_proj(c)
         h = x + t_emb
 
         for block in self.blocks:
@@ -101,7 +103,11 @@ def compute_diffusion_loss(model, x_0, condition, T=1000):
     B = x_0.shape[0]
     device = x_0.device
 
-    t = torch.randint(0, T, (B,), device=device)
+    if torch.isnan(x_0).any() or torch.isinf(x_0).any():
+        print("WARNING: x_0 contains NaN/Inf, skipping")
+        return torch.tensor(0.0, device=device, requires_grad=True)
+
+    t = torch.randint(0, T // 2, (B,), device=device)
     noise = torch.randn_like(x_0)
 
     beta = _cosine_beta_schedule(T).to(device)
@@ -112,7 +118,12 @@ def compute_diffusion_loss(model, x_0, condition, T=1000):
     sqrt_one_minus = (1 - alpha_bar[t]).sqrt().view(B, 1, 1)
     x_t = sqrt_alpha_bar * x_0 + sqrt_one_minus * noise
 
-    noise_pred = model(x_t, t, condition)
+    noise_pred = model(x_t, t.float(), condition)
+
+    if torch.isnan(noise_pred).any() or torch.isinf(noise_pred).any():
+        print("WARNING: noise_pred contains NaN/Inf, skipping")
+        return torch.tensor(0.0, device=device, requires_grad=True)
+
     return F.mse_loss(noise_pred, noise)
 
 
