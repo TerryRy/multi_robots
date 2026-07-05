@@ -229,6 +229,26 @@ class OpenVLAPolicy:
         hidden = outputs.hidden_states[-1][:, visual_tokens.shape[1]:visual_tokens.shape[1] + n_agent, :]
         return hidden
 
+    def load_checkpoint(self, checkpoint_dir):
+        import os
+        enc_path = os.path.join(checkpoint_dir, "encoder.pt")
+        head_path = os.path.join(checkpoint_dir, "diffusion_head.pt")
+        lora_path = os.path.join(checkpoint_dir, "lora_adapter")
+        if os.path.exists(enc_path):
+            self.feature_encoder.load_state_dict(
+                torch.load(enc_path, map_location=self.device, weights_only=True)
+            )
+            print(f"  Loaded encoder: {enc_path}")
+        if os.path.exists(head_path):
+            self.diffusion_head.load_state_dict(
+                torch.load(head_path, map_location=self.device, weights_only=True)
+            )
+            print(f"  Loaded diffusion head: {head_path}")
+        if os.path.exists(lora_path):
+            from peft import PeftModel
+            self.llm = PeftModel.from_pretrained(self.llm, lora_path)
+            print(f"  Loaded LoRA: {lora_path}")
+
     def predict(self, text_prompt, features_dict, images=None):
         if self.use_mock and hasattr(self, '_mock'):
             return self._mock.predict(text_prompt, features_dict)

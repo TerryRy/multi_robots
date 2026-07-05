@@ -40,6 +40,11 @@ class VLAController:
                 action_mode=self.action_mode, chunk_size=self.chunk_size,
             )
 
+        if not self.use_mock and config.get("checkpoint_dir"):
+            ckpt = config["checkpoint_dir"]
+            print(f"Loading VLA checkpoint: {ckpt}")
+            self._model.load_checkpoint(ckpt)
+
         self._data_collector = None
         if self.collect_data:
             self._data_collector = DataCollector(

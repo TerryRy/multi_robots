@@ -456,6 +456,7 @@ def start_simulator(args, receive_q = None, send_q = None):
             "action_mode": "continuous",
             "model_id": cmd_args.vla_model or "openvla/openvla-7b",
             "device": cmd_args.vla_device,
+            "checkpoint_dir": cmd_args.vla_checkpoint,
         }
         simulator.vla_controller = VLAController(agents, simulator.b2_objects, vla_config)
         if cmd_args.vla_collect:
