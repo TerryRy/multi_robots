@@ -457,10 +457,11 @@ def start_simulator(args, receive_q = None, send_q = None):
             "model_id": cmd_args.vla_model or "openvla/openvla-7b",
             "device": cmd_args.vla_device,
             "checkpoint_dir": cmd_args.vla_checkpoint,
+            "mix_ratios": cmd_args.data_mix,
         }
         simulator.vla_controller = VLAController(agents, simulator.b2_objects, vla_config)
         if cmd_args.vla_collect:
-            print("Data collection mode: recording expert trajectories")
+            print(f"Data collection mode | Mix: {cmd_args.data_mix}")
         else:
             model_str = cmd_args.vla_model or "mock"
             print(f"VLA mode: using {model_str}")

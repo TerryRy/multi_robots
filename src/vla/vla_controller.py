@@ -1,3 +1,4 @@
+import random
 from vla.state_serializer import StateSerializer
 from vla.waypoint_tracker import WaypointTracker
 from vla.data_collector import DataCollector
@@ -58,20 +59,45 @@ class VLAController:
         self._last_vla_call_step = -999
         self._pos_history = {agent.id: [] for agent in agents}
         self._pending_state = []
+        self._mix = self._parse_mix(config.get("mix_ratios", "expert:1.0"))
+        self._current_controller = None
+
+    def _parse_mix(self, mix_str):
+        result = {}
+        for part in mix_str.split(","):
+            kv = part.strip().split(":")
+            result[kv[0]] = float(kv[1])
+        return result
+
+    def _pick_controller(self):
+        r = random.random()
+        cum = 0.0
+        for name in ["expert", "policy", "random"]:
+            cum += self._mix.get(name, 0.0)
+            if r < cum:
+                return name
+        return "expert"
 
     def step(self, simulator):
         self._step_counter += 1
 
         if self.collect_data:
-            # Record actual position for each agent
             for agent in self.agents:
                 pos = agent.position
                 px = pos.x if hasattr(pos, 'x') else pos[0]
                 py = pos.y if hasattr(pos, 'y') else pos[1]
                 self._pos_history[agent.id].append((px, py))
 
-            # Every chunk_size steps: save current state, waypoints will be
-            # the ACTUAL positions the agent takes over the next chunk_size steps
+            if self._step_counter == 1:
+                self._current_controller = self._pick_controller()
+                if DEBUG:
+                    print(f"  Controller: {self._current_controller}")
+
+            if self._current_controller == "policy" and self._model is not None:
+                self._run_policy_control(simulator)
+            elif self._current_controller == "random":
+                self._run_random_control(simulator)
+
             if self._step_counter % self.chunk_size == 0:
                 text_prompt, features, agents_data = self.serializer.serialize(simulator)
                 img = self.renderer.render(simulator)
@@ -84,7 +110,6 @@ class VLAController:
                     "agent_ids": [ag["id"] for ag in agents_data],
                 })
 
-            # Check if any pending state has enough future history
             while self._pending_state:
                 ps = self._pending_state[0]
                 start = ps["step"]
@@ -111,8 +136,7 @@ class VLAController:
             text_prompt, features, agents_data = self.serializer.serialize(simulator)
             img = self.renderer.render(simulator)
             vla_output = self._model.predict(text_prompt, features, images=img)
-            if not self.collect_data:
-                self._dispatch_waypoints(vla_output, agents_data, simulator)
+            self._dispatch_waypoints(vla_output, agents_data, simulator)
 
             if DEBUG and (self._step_counter <= 3 or self._step_counter % 60 == 0):
                 for ag in agents_data:
@@ -135,6 +159,19 @@ class VLAController:
                 position = Point(position.x, position.y)
             vx, vy = tracker.compute_velocity(position)
             agent.linear_velocity = (vx, vy)
+
+    def _run_policy_control(self, simulator):
+        text_prompt, features, agents_data = self.serializer.serialize(simulator)
+        img = self.renderer.render(simulator)
+        vla_output = self._model.predict(text_prompt, features, images=img)
+        self._dispatch_waypoints(vla_output, agents_data, simulator)
+
+    def _run_random_control(self, simulator):
+        for agent in self.agents:
+            import random as rnd
+            angle = rnd.uniform(0, 2 * 3.14159)
+            speed = rnd.uniform(0, agent.cruise_speed * 0.5)
+            agent.linear_velocity = (cos(angle) * speed, sin(angle) * speed)
 
     def _dispatch_waypoints(self, vla_output, agents_data, simulator):
         num_agents = len(agents_data)

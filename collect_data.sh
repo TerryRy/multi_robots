@@ -11,10 +11,11 @@
 #SBATCH --mail-type=BEGIN,END,FAIL
 
 # ==================== 用法 ====================
-# 数据收集: 运行 hand-written planners 生成训练数据
-# 不需要 HF Token (仅 simulator, 不涉及模型下载)
+# 数据收集: 运行 controllers 采集训练数据
+# 默认纯 expert (hand-written planners)
+# 可通过 --mix 使用混合策略: expert + policy(需模型) + random
 #
-#   sbatch collect_data.sh <stage> [sim_minutes]
+#   sbatch collect_data.sh <stage> [sim_minutes] [extra_args...]
 #     stage:  1 | 2 | 3 | 4
 #     sim_minutes: 模拟分钟数
 #
@@ -22,12 +23,15 @@
 #     Stage 1: 10min | Stage 2: 8min | Stage 3: 10min | Stage 4: 10min
 #
 # 示例:
-#   sbatch collect_data.sh 1          # Stage 1, 10min
-#   sbatch collect_data.sh 2 15       # Stage 2, 15min
-# =============================================
+#   sbatch collect_data.sh 1                          # Stage 1, 10min (纯 expert)
+#   sbatch collect_data.sh 2 15 --mix expert:0.6,policy:0.3,random:0.1 \\
+#     --vla-model openvla/openvla-7b --vla-device cuda \\
+#     --vla-checkpoint ~/ip/multi_robots/weights/stage_1
 
-STAGE=${1:?"Usage: $0 <stage> [sim_time]; stage=1|2|3|4"}
+STAGE=${1:?"Usage: $0 <stage> [sim_minutes] [extra_args...]; stage=1|2|3|4"}
 SIM_TIME=${2:-""}
+shift 2 2>/dev/null || shift 1
+PASS_THRU_ARGS="$@"
 
 case $STAGE in
   1)
@@ -79,7 +83,8 @@ cd ${SRC_DIR}
 
 python simulator.py --vla-collect -t ${SIM_TIME} \
     --agent ${AGENTS} --port ${LOAD_PORTS} ${UNLOAD_PORTS} \
-    --size ${MAP_W} ${MAP_H}
+    --size ${MAP_W} ${MAP_H} \
+    ${PASS_THRU_ARGS}
 
 echo ""
 echo "Moving data to stage_${STAGE}..."

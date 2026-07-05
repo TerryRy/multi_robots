@@ -46,6 +46,7 @@ def create_cmd_parser(prog=None):
     general_control.add_argument('--vla-model', action='store', type=str, dest='vla_model', default=None, help='OpenVLA model ID or path (default: mock)')
     general_control.add_argument('--vla-device', action='store', type=str, dest='vla_device', default='cpu', help='Device for VLA inference (cpu or cuda)')
     general_control.add_argument('--vla-checkpoint', action='store', type=str, dest='vla_checkpoint', default=None, help='Path to trained checkpoint dir (encoder.pt + diffusion_head.pt + lora_adapter/)')
+    general_control.add_argument('--mix', action='store', type=str, dest='data_mix', default='expert:1.0', help='Data collection mix ratios, e.g. "expert:0.6,policy:0.3,random:0.1"')
     
     # json_control
     json_control.add_argument('--agent', action='store', type=int, dest='agents_num', help='Set the number of agents', metavar='N')
