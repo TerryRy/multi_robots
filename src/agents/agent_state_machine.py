@@ -106,8 +106,10 @@ def operate(agent, server):
         agent.task.port.confirm_exit()
         if agent.task.type == TaskType.GO_TO_LOADING_PORT:
             agent.assign_task(server.get_unloading_task(agent, item))
+            agent.carrying_item = item
         elif agent.task.type == TaskType.GO_TO_UNLOADING_PORT:
             agent.assign_task(server.get_loading_task(agent))
+            agent.carrying_item = None
         else:
             raise Exception(" Unclassifed operation types ")
         agent.state = AgentState.CRUISE

@@ -167,6 +167,7 @@ class Agent(object):
         self.history_ray_length_list = []
         self.history_ray_point_list = []
         self.sequence_of_poses = deque()
+        self.carrying_item = None
         self.replan = False
         self.internal_stations = []
 
