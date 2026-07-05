@@ -87,6 +87,8 @@ def draw_agent(polygon, body, fixture, screen, agent, PPM, workspace_dimension, 
         text_pos=text_obj.get_rect()
         text_pos.center=centroid
         screen.blit(text_obj,text_pos)
+        if getattr(agent, 'carrying_item', None):
+            pygame.draw.circle(screen, (255, 215, 0), [int(c) for c in centroid], 6, 2)
     #Agent status
     #Agent ID, current position, State
     if show_agent_details:
@@ -543,6 +545,12 @@ class Visualisation:
             self.meter_to_pixel(port.dimension[1]),
             (2, 126, 72, 255))
         self.draw_port_id(screen, port)
+        items = getattr(port, 'items', [])
+        dot_count = min(len(items), 10)
+        for i in range(dot_count):
+            cx = self.meter_to_pixel(port.location.x + port.dimension[0]) + self.reference_point[0] + 6 + i * 8
+            cy = self.meter_to_pixel(port.location.y + port.dimension[1] / 2) + self.reference_point[1]
+            pygame.draw.circle(screen, (255, 255, 0), (cx, cy), 4)
     def draw_unloading_port(self, screen, port):
         x = port.location.x
         y = port.location.y
