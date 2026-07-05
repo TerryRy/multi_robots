@@ -89,6 +89,10 @@ def draw_agent(polygon, body, fixture, screen, agent, PPM, workspace_dimension, 
         screen.blit(text_obj,text_pos)
         if getattr(agent, 'carrying_item', None):
             pygame.draw.circle(screen, (255, 215, 0), [int(c) for c in centroid], 10, 3)
+            dest_port_id = getattr(getattr(agent.task, 'port', None), 'identifier', '?')
+            font_small = pygame.font.Font(None, int(14 * PPM / 30.0))
+            label = font_small.render("→P" + str(dest_port_id), True, (255, 215, 0))
+            screen.blit(label, (int(centroid[0]) + 12, int(centroid[1]) - 8))
     #Agent status
     #Agent ID, current position, State
     if show_agent_details:
