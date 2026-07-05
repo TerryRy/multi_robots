@@ -88,7 +88,7 @@ def draw_agent(polygon, body, fixture, screen, agent, PPM, workspace_dimension, 
         text_pos.center=centroid
         screen.blit(text_obj,text_pos)
         if getattr(agent, 'carrying_item', None):
-            pygame.draw.circle(screen, (255, 215, 0), [int(c) for c in centroid], 6, 2)
+            pygame.draw.circle(screen, (255, 215, 0), [int(c) for c in centroid], 10, 3)
     #Agent status
     #Agent ID, current position, State
     if show_agent_details:
