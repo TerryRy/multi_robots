@@ -73,7 +73,7 @@ if files:
             rec = json.loads(line)
             img_path = rec.get('image_path')
             if img_path:
-                full = os.path.join('$HOME/ip/multi_robots/data/trajectories', img_path)
+                full = os.path.join(data_dir, img_path)
                 exists = os.path.exists(full)
                 size = os.path.getsize(full) if exists else 0
                 print(f'  [{i}] img: exists={exists}, size={size}B')
