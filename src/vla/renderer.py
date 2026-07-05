@@ -13,30 +13,32 @@ class SimulatorRenderer:
     def __init__(self, img_size=224, padding=5):
         self.img_size = img_size
         self.padding = padding
+        self._scale = 1.0
 
-    def _world_to_img(self, wx, wy, env_width, env_height):
-        usable = self.img_size - 2 * self.padding
-        ix = self.padding + (wx / env_width) * usable
-        iy = self.padding + (wy / env_height) * usable
+    def _world_to_img(self, wx, wy):
+        ix = self.padding + wx * self._scale
+        iy = self.padding + wy * self._scale
         return int(ix), int(iy)
 
-    def _world_to_img_scale(self, w, env_width):
-        usable = self.img_size - 2 * self.padding
-        return max(1, int((w / env_width) * usable))
+    def _world_to_img_scale(self, w):
+        return max(1, int(w * self._scale))
 
     def render(self, simulator):
         img = np.full((self.img_size, self.img_size, 3), 26, dtype=np.uint8)
         env_width = simulator.environment.width_in_meters
         env_height = simulator.environment.height_in_meters
+        max_dim = max(env_width, env_height)
+        usable = self.img_size - 2 * self.padding
+        self._scale = usable / max_dim
 
         obstacles = getattr(simulator.environment, 'obstacles', {})
         if obstacles:
             for obs in obstacles.values():
                 x, y = obs.location.x, obs.location.y
                 w, h = obs.dimension[0], obs.dimension[1]
-                ix, iy = self._world_to_img(x, y, env_width, env_height)
-                iw = self._world_to_img_scale(w, env_width)
-                ih = self._world_to_img_scale(h, env_height)
+                ix, iy = self._world_to_img(x, y)
+                iw = self._world_to_img_scale(w)
+                ih = self._world_to_img_scale(h)
                 img[iy:iy+ih, ix:ix+iw] = (139, 69, 19)
 
         port_color_map = {'loading': (30, 107, 255), 'unloading': (255, 51, 51)}
@@ -46,9 +48,9 @@ class SimulatorRenderer:
             for port in port_list:
                 x, y = port.location.x, port.location.y
                 w, h = port.dimension[0], port.dimension[1]
-                ix, iy = self._world_to_img(x, y, env_width, env_height)
-                iw = self._world_to_img_scale(w, env_width)
-                ih = self._world_to_img_scale(h, env_height)
+                ix, iy = self._world_to_img(x, y)
+                iw = self._world_to_img_scale(w)
+                ih = self._world_to_img_scale(h)
                 color = port_color_map[port_type]
                 img[iy:iy+ih, ix:ix+iw] = color
                 cx, cy = ix + iw // 2, iy + ih // 2
@@ -61,8 +63,8 @@ class SimulatorRenderer:
                 continue
             pos = body.position
             angle = body.angle
-            ix, iy = self._world_to_img(pos.x, pos.y, env_width, env_height)
-            r = max(3, self._world_to_img_scale(0.35, env_width))
+            ix, iy = self._world_to_img(pos.x, pos.y)
+            r = max(3, self._world_to_img_scale(0.35))
             color = AGENT_COLORS[agent.id % len(AGENT_COLORS)]
             self._fill_circle(img, ix, iy, r, color)
             ax = ix + int(cos(angle) * r * 2.5)
