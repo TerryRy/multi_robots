@@ -56,21 +56,51 @@ class VLAController:
 
         self._step_counter = 0
         self._last_vla_call_step = -999
+        self._pos_history = {agent.id: [] for agent in agents}
+        self._pending_state = []
 
     def step(self, simulator):
         self._step_counter += 1
 
         if self.collect_data:
-            # Data collection mode: only collect expert data at chunk intervals
-            # Do NOT run model inference (no render, no predict)
-            if self._data_collector is not None and self._step_counter % self.chunk_size == 0:
+            # Record actual position for each agent
+            for agent in self.agents:
+                pos = agent.position
+                px = pos.x if hasattr(pos, 'x') else pos[0]
+                py = pos.y if hasattr(pos, 'y') else pos[1]
+                self._pos_history[agent.id].append((px, py))
+
+            # Every chunk_size steps: save current state, waypoints will be
+            # the ACTUAL positions the agent takes over the next chunk_size steps
+            if self._step_counter % self.chunk_size == 0:
                 text_prompt, features, agents_data = self.serializer.serialize(simulator)
                 img = self.renderer.render(simulator)
-                expert_waypoints = self._collect_expert_waypoints(simulator)
-                if expert_waypoints:
+                self._pending_state.append({
+                    "step": self._step_counter,
+                    "text_prompt": text_prompt,
+                    "features": features,
+                    "agents_data": agents_data,
+                    "img": img,
+                    "agent_ids": [ag["id"] for ag in agents_data],
+                })
+
+            # Check if any pending state has enough future history
+            while self._pending_state:
+                ps = self._pending_state[0]
+                start = ps["step"]
+                if len(self._pos_history[ps["agent_ids"][0]]) < start + self.chunk_size:
+                    break
+                self._pending_state.pop(0)
+                waypoints = {}
+                for aid in ps["agent_ids"]:
+                    hist = self._pos_history[aid]
+                    wps = hist[start:start + self.chunk_size]
+                    if len(wps) == self.chunk_size:
+                        waypoints[str(aid)] = wps
+                if waypoints and self._data_collector is not None:
                     self._data_collector.collect(
-                        text_prompt, features, agents_data, expert_waypoints,
-                        simulator=simulator,
+                        ps["text_prompt"], ps["features"], ps["agents_data"],
+                        waypoints, simulator=simulator,
                     )
             return
 
@@ -141,44 +171,6 @@ class VLAController:
             gy = py + dx * sin(heading) + dy * cos(heading)
             waypoints.append((gx, gy))
         return waypoints
-
-    def _collect_expert_waypoints(self, simulator):
-        expert = {}
-        for agent in self.agents:
-            if not hasattr(agent, 'has_destination') or not agent.has_destination():
-                continue
-            seq = agent.sequence_of_poses
-            if not seq:
-                continue
-            pos = agent.position
-            px = pos.x if hasattr(pos, 'x') else pos[0]
-            py = pos.y if hasattr(pos, 'y') else pos[1]
-
-            wp_list = []
-            seq_iter = iter(seq)
-            for _ in range(self.chunk_size):
-                try:
-                    nxt = next(seq_iter)
-                except StopIteration:
-                    nxt = agent.destination_location
-                if nxt is None:
-                    break
-                nx = nxt.x if hasattr(nxt, 'x') else nxt[0]
-                ny = nxt.y if hasattr(nxt, 'y') else nxt[1]
-                wp_list.append((nx, ny))
-
-            # If seq had only 1 point (no global planner), interpolate
-            if len(set(wp_list)) == 1 and len(wp_list) > 1:
-                dest = wp_list[0]
-                wp_list = []
-                dx = (dest[0] - px) / self.chunk_size
-                dy = (dest[1] - py) / self.chunk_size
-                for i in range(1, self.chunk_size + 1):
-                    wp_list.append((px + dx * i, py + dy * i))
-
-            if len(wp_list) > 0:
-                expert[agent.id] = wp_list
-        return expert
 
     def flush_data(self):
         if self._data_collector is not None:
