@@ -150,6 +150,10 @@ class VLAController:
             seq = agent.sequence_of_poses
             if not seq:
                 continue
+            pos = agent.position
+            px = pos.x if hasattr(pos, 'x') else pos[0]
+            py = pos.y if hasattr(pos, 'y') else pos[1]
+
             wp_list = []
             seq_iter = iter(seq)
             for _ in range(self.chunk_size):
@@ -162,6 +166,16 @@ class VLAController:
                 nx = nxt.x if hasattr(nxt, 'x') else nxt[0]
                 ny = nxt.y if hasattr(nxt, 'y') else nxt[1]
                 wp_list.append((nx, ny))
+
+            # If seq had only 1 point (no global planner), interpolate
+            if len(set(wp_list)) == 1 and len(wp_list) > 1:
+                dest = wp_list[0]
+                wp_list = []
+                dx = (dest[0] - px) / self.chunk_size
+                dy = (dest[1] - py) / self.chunk_size
+                for i in range(1, self.chunk_size + 1):
+                    wp_list.append((px + dx * i, py + dy * i))
+
             if len(wp_list) > 0:
                 expert[agent.id] = wp_list
         return expert
