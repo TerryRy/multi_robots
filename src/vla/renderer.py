@@ -54,12 +54,6 @@ class SimulatorRenderer:
                 cx, cy = ix + iw // 2, iy + ih // 2
                 pid = str(getattr(port, 'identifier', '?'))
                 self._put_text(img, pid, cx, cy, (255, 255, 255), 4)
-                items = getattr(port, 'items', [])
-                num_items = min(len(items), 5)
-                for ni in range(num_items):
-                    dot_x = ix + iw + 2 + ni * 4
-                    dot_y = iy + ih // 2
-                    self._fill_circle(img, dot_x, dot_y, 2, (255, 255, 0))
 
         for agent in simulator.agents:
             body = simulator.b2_objects.get(agent.id)
@@ -71,9 +65,6 @@ class SimulatorRenderer:
             r = max(3, self._world_to_img_scale(0.35, env_width))
             color = AGENT_COLORS[agent.id % len(AGENT_COLORS)]
             self._fill_circle(img, ix, iy, r, color)
-            has_cargo = getattr(agent, 'carrying_item', None)
-            if has_cargo:
-                self._fill_circle(img, ix, iy, r // 2, (255, 215, 0))
             ax = ix + int(cos(angle) * r * 2.5)
             ay = iy + int(sin(angle) * r * 2.5)
             self._draw_line(img, ix, iy, ax, ay, (255, 255, 255), 2)
