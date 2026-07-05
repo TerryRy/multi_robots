@@ -49,7 +49,7 @@ cd ${SRC_DIR}
 # 使用 HF 模型 ID, 从持久缓存加载
 MODEL="openvla/openvla-7b"
 EPOCHS=20
-BATCH=1
+BATCH=4
 LR=3e-5
 
 # 拼接基础参数
