@@ -61,6 +61,7 @@ class VLAController:
         self._pending_state = []
         self._mix = self._parse_mix(config.get("mix_ratios", "expert:1.0"))
         self._current_controller = None
+        self._stride = config.get("stride", 1)
 
     def _parse_mix(self, mix_str):
         result = {}
@@ -113,13 +114,15 @@ class VLAController:
             while self._pending_state:
                 ps = self._pending_state[0]
                 start = ps["step"]
-                if len(self._pos_history[ps["agent_ids"][0]]) < start + self.chunk_size:
+                total_steps = self.chunk_size * self._stride
+                if len(self._pos_history[ps["agent_ids"][0]]) < start + total_steps:
                     break
                 self._pending_state.pop(0)
                 waypoints = {}
                 for aid in ps["agent_ids"]:
                     hist = self._pos_history[aid]
-                    wps = hist[start:start + self.chunk_size]
+                    raw = hist[start:start + total_steps]
+                    wps = [raw[i] for i in range(0, total_steps, self._stride)]
                     if len(wps) == self.chunk_size:
                         waypoints[str(aid)] = wps
                 if waypoints and self._data_collector is not None:
