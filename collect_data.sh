@@ -18,7 +18,7 @@
 STAGE=${1:?"Usage: $0 <stage> [sim_minutes]; stage=1|2|3|4"}
 SIM_TIME=${2:-""}
 
-LP="DullPlanner"
+LP="HRVOPlanner"
 STRIDE=4
 
 case $STAGE in
