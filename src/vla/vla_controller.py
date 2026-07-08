@@ -138,12 +138,19 @@ class VLAController:
             vla_output = self._model.predict(text_prompt, features, images=img)
             self._dispatch_waypoints(vla_output, agents_data, simulator)
 
-            if DEBUG and (self._step_counter <= 3 or self._step_counter % 60 == 0):
+            if self._step_counter <= 5 or self._step_counter % 60 == 0:
                 for ag in agents_data:
                     trk = self.trackers.get(ag["id"])
                     has_wps = trk.has_waypoints() if trk else False
-                    print(f"  VLA Debug: Agent {ag['id']} pos=({ag['position'][0]:.1f},{ag['position'][1]:.1f}) "
-                          f"dest={ag['destination']} has_wps={has_wps} n_wp={len(trk.waypoint_queue) if trk else 0}")
+                    wp_str = ""
+                    if has_wps:
+                        wp = trk.waypoint_queue[0]
+                        d = ag["destination"]
+                        if d:
+                            dd = ((wp[0]-d[0])**2 + (wp[1]-d[1])**2)**0.5
+                            wp_str = f" 1st_wp=({wp[0]:.1f},{wp[1]:.1f}) dist2dest={dd:.1f}"
+                    print(f"  VLA: Agent {ag['id']} pos=({ag['position'][0]:.1f},{ag['position'][1]:.1f}) "
+                          f"dest={ag['destination']} has_wps={has_wps}{wp_str}")
 
             self._last_vla_call_step = self._step_counter
 
