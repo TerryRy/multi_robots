@@ -18,39 +18,39 @@
 STAGE=${1:?"Usage: $0 <stage> [sim_minutes]; stage=1|2|3|4"}
 SIM_TIME=${2:-""}
 
-LP="HRVOPlanner"
+LP="DullPlanner"
 STRIDE=4
 
 case $STAGE in
   1)
     AGENTS=2; LOAD_PORTS=2; UNLOAD_PORTS=2
-    MAP_W=18; MAP_H=10
+    MAP_W=20; MAP_H=12
     SIM_TIME=${SIM_TIME:-10}
-    MIX_ARGS="--lp ${LP} --vla-stride ${STRIDE}"
+    MIX_ARGS="--vla-stride ${STRIDE}"
     ;;
   2)
     AGENTS=4; LOAD_PORTS=4; UNLOAD_PORTS=4
-    MAP_W=24; MAP_H=15
+    MAP_W=30; MAP_H=16
     SIM_TIME=${SIM_TIME:-10}
-    MIX_ARGS="--lp ${LP} --vla-stride ${STRIDE} \
+    MIX_ARGS="--vla-stride ${STRIDE} \
               --mix expert:0.6,policy:0.3,random:0.1 \
               --vla-model openvla/openvla-7b --vla-device cuda \
               --vla-checkpoint $HOME/ip/multi_robots/weights/stage_1"
     ;;
   3)
     AGENTS=5; LOAD_PORTS=5; UNLOAD_PORTS=5
-    MAP_W=25; MAP_H=18
+    MAP_W=40; MAP_H=20
     SIM_TIME=${SIM_TIME:-12}
-    MIX_ARGS="--lp ${LP} --vla-stride ${STRIDE} \
+    MIX_ARGS="--vla-stride ${STRIDE} \
               --mix expert:0.4,policy:0.4,random:0.2 \
               --vla-model openvla/openvla-7b --vla-device cuda \
               --vla-checkpoint $HOME/ip/multi_robots/weights/stage_2"
     ;;
   4)
     AGENTS=7; LOAD_PORTS=7; UNLOAD_PORTS=7
-    MAP_W=30; MAP_H=21
+    MAP_W=45; MAP_H=20
     SIM_TIME=${SIM_TIME:-15}
-    MIX_ARGS="--lp ${LP} --vla-stride ${STRIDE} \
+    MIX_ARGS="--vla-stride ${STRIDE} \
               --mix expert:0.2,policy:0.6,random:0.2 \
               --vla-model openvla/openvla-7b --vla-device cuda \
               --vla-checkpoint $HOME/ip/multi_robots/weights/stage_3"
