@@ -376,6 +376,15 @@ def train(args):
             hidden = hidden[:, :n_active, :]
 
             target_flat = target_tensor.reshape(B, n_active, -1)
+            pos = agent_feat[:, :n_active, :2]
+            cos_h = agent_feat[:, :n_active, 2:3]
+            sin_h = agent_feat[:, :n_active, 3:4]
+            target_local = target_flat - pos.repeat(1, 1, 8)
+            tx = target_local[:, :, 0::2]
+            ty = target_local[:, :, 1::2]
+            local_x = tx * cos_h + ty * sin_h
+            local_y = -tx * sin_h + ty * cos_h
+            target_flat = torch.stack([local_x, local_y], dim=-1).reshape(B, n_active, -1)
 
             loss = compute_diffusion_loss(diffusion_head, target_flat, hidden)
 
