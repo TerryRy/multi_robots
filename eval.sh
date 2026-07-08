@@ -43,10 +43,10 @@ MODEL="openvla/openvla-7b"
 
 # 根据 stage 确定默认 agent/port 数
 case $STAGE in
-  1) AGENTS=2; LOAD_P=2; UNLOAD_P=2; MAP_W=20; MAP_H=12 ;;
-  2) AGENTS=4; LOAD_P=4; UNLOAD_P=4; MAP_W=30; MAP_H=16 ;;
-  3) AGENTS=5; LOAD_P=5; UNLOAD_P=5; MAP_W=40; MAP_H=20 ;;
-  4) AGENTS=7; LOAD_P=7; UNLOAD_P=7; MAP_W=45; MAP_H=20 ;;
+  1) AGENTS=2; LOAD_P=2; UNLOAD_P=2; MAP_W=18; MAP_H=10 ;;
+  2) AGENTS=4; LOAD_P=4; UNLOAD_P=4; MAP_W=24; MAP_H=15 ;;
+  3) AGENTS=5; LOAD_P=5; UNLOAD_P=5; MAP_W=25; MAP_H=18 ;;
+  4) AGENTS=7; LOAD_P=7; UNLOAD_P=7; MAP_W=30; MAP_H=21 ;;
   *) echo "Error: stage must be 1-4"; exit 1 ;;
 esac
 

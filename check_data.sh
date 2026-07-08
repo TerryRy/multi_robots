@@ -17,6 +17,7 @@
 
 STAGE=${1:-1}
 DATA_DIR="$HOME/ip/multi_robots/data/trajectories/stage_${STAGE}"
+DATA_DIR="$HOME/ip/multi_robots/data/trajectories/stage_${STAGE}"
 
 echo "============================================"
 echo "Data check: stage ${STAGE}"
