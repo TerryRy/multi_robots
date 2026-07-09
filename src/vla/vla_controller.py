@@ -121,7 +121,7 @@ class VLAController:
                 waypoints = {}
                 for aid in ps["agent_ids"]:
                     hist = self._pos_history[aid]
-                    raw = hist[start:start + total_steps]
+                    raw = hist[start + 1:start + total_steps + 1]
                     wps = [raw[i] for i in range(0, total_steps, self._stride)]
                     if len(wps) == self.chunk_size:
                         waypoints[str(aid)] = wps
