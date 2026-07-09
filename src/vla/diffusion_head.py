@@ -132,8 +132,9 @@ def ddim_sample(model, condition, ddim_steps=50, T=1000, eta=0.0):
     B, N, _ = condition.shape
     device = condition.device
 
-    step_ratio = T // ddim_steps
-    timesteps = list(range(0, T, step_ratio))
+    max_t = T // 2
+    step_ratio = max_t // ddim_steps
+    timesteps = list(range(0, max_t, step_ratio))
     timesteps.reverse()
 
     beta = _cosine_beta_schedule(T).to(device)
