@@ -158,6 +158,7 @@ class OpenVLAPolicy:
         ])
 
         self._ready = True
+        self._step_debug = 0
         print(f"OpenVLA-7B loaded. hidden_dim={hidden_dim}, "
               f"trainable: encoder={sum(p.numel() for p in self.feature_encoder.parameters())/1e3:.0f}K, "
               f"diffusion_head={sum(p.numel() for p in self.diffusion_head.parameters())/1e3:.0f}K")
@@ -272,6 +273,12 @@ class OpenVLAPolicy:
                 ddim_steps=self.diffusion_steps,
                 eta=0.0,
             )
+
+            if self._step_debug < 5:
+                print(f"  DDIM out: mean={waypoints_tensor.mean():.4f} std={waypoints_tensor.std():.4f} "
+                      f"min={waypoints_tensor.min():.4f} max={waypoints_tensor.max():.4f}")
+                print(f"  DDIM sample[0,0,:8]: {waypoints_tensor[0,0,:8].tolist()}")
+                self._step_debug += 1
 
             num_agents = features_dict.get("num_agents", 0)
             positions = [
