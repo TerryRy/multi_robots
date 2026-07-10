@@ -269,9 +269,7 @@ def train(args):
     diffusion_head = DiffusionActionHead(
         hidden_dim=hidden_dim, chunk_size=args.chunk_size,
     )
-    diffusion_head = diffusion_head.to(device=device, dtype=torch.float32)
-    for p in diffusion_head.parameters():
-        p.data = p.data.to(torch.float32)
+    diffusion_head = diffusion_head.to(device=device, dtype=dtype)
 
     # ---- Load checkpoints (incremental training) ----
     if args.load_encoder:
