@@ -41,8 +41,8 @@ class CrossAttentionBlock(nn.Module):
 
 
 class DiffusionActionHead(nn.Module):
-    def __init__(self, hidden_dim=4096, chunk_size=8, cond_dim=256, d_model=256,
-                 n_blocks=4, n_heads=4, T=1000):
+    def __init__(self, hidden_dim=4096, chunk_size=8, cond_dim=512, d_model=512,
+                 n_blocks=4, n_heads=8, T=1000):
         super().__init__()
         self.chunk_size = chunk_size
         self.T = T
@@ -80,9 +80,7 @@ class DiffusionActionHead(nn.Module):
         t_emb = self.time_proj(t_emb[:, None, :].expand(-1, N, -1))
 
         x = self.input_proj(x_t.to(dtype))
-        c = condition.to(dtype)
-        c = c / (c.norm(dim=-1, keepdim=True) + 1e-8)
-        c = self.cond_proj(c)
+        c = self.cond_proj(condition.to(dtype))
         h = x + t_emb
 
         for block in self.blocks:
