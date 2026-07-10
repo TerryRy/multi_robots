@@ -75,6 +75,8 @@ class VLADataset(Dataset):
         else:
             self.instance_weights = [1.0] * len(self.samples)
 
+        self._filter_waypoint_direction()
+
         if max_samples and max_samples < len(self.samples):
             indices = random.choices(
                 range(len(self.samples)),
@@ -85,6 +87,29 @@ class VLADataset(Dataset):
             self.instance_weights = [1.0] * len(self.samples)
 
         print(f"VLADataset: {len(self.samples)} samples from {len(data_dirs)} sources")
+
+    def _filter_waypoint_direction(self):
+        """Remove samples where first waypoint doesn't point toward destination."""
+        kept = []
+        for s in self.samples:
+            ok = True
+            for aid in sorted(s["target_action"].keys()):
+                wps = s["target_action"][aid]
+                feat = s["features"]["agents"][int(aid)]
+                px, py = feat[0], feat[1]
+                dxg, dyg = feat[12], feat[13]
+                wp1_x, wp1_y = wps[0]
+                # dot product: (wp1-pos) · (dest-pos) > 0
+                dot = (wp1_x - px) * dxg + (wp1_y - py) * dyg
+                if dot <= 0:
+                    ok = False
+                    break
+            if ok:
+                kept.append(s)
+        n_dropped = len(self.samples) - len(kept)
+        self.samples = kept
+        if n_dropped:
+            print(f"  Filtered {n_dropped}/{n_dropped + len(kept)} samples (wrong waypoint direction)")
 
     def __len__(self):
         return len(self.samples)
