@@ -118,8 +118,8 @@ class VLADataset(Dataset):
 
 def train(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dtype = torch.float32
-    print(f"Device: {device} | Dtype: {dtype} (unified float32)")
+    dtype = torch.float16 if device.type == "cuda" else torch.float32
+    print(f"Device: {device} | Dtype: {dtype}")
 
     # ---- Data directories & curriculum mixing ----
     data_mix = args.data_mix
@@ -261,8 +261,6 @@ def train(args):
         hidden_dim = llm.config.hidden_size
         if not hasattr(llm, 'device_map') or llm.device_map is None:
             llm.to(device)
-        llm = llm.float()
-        print("LLM converted to float32")
 
     # ---- MLP encoder + Diffusion head ----
     encoder = AgentFeatureEncoder(input_dim=55, hidden_dim=512, output_dim=hidden_dim)

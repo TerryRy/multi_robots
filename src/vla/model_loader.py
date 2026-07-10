@@ -132,7 +132,6 @@ class OpenVLAPolicy:
 
         del full_model
         self.llm.to(self.device)
-        self.llm = self.llm.float()
         self.llm.eval()
         for p in self.llm.parameters():
             p.requires_grad = False
