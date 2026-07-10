@@ -451,6 +451,9 @@ def train(args):
             llm_mod.save_pretrained(os.path.join(args.save_dir, "lora_adapter"))
         print(f"Saved to {args.save_dir}/")
 
+    if world_size > 1:
+        torch.distributed.destroy_process_group()
+
 
 def collate_vla(batch):
     agent_feat_list = []
