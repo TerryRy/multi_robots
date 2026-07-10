@@ -89,27 +89,7 @@ class VLADataset(Dataset):
         print(f"VLADataset: {len(self.samples)} samples from {len(data_dirs)} sources")
 
     def _filter_waypoint_direction(self):
-        """Remove samples where first waypoint doesn't point toward destination."""
-        kept = []
-        for s in self.samples:
-            ok = True
-            for aid in sorted(s["target_action"].keys()):
-                wps = s["target_action"][aid]
-                feat = s["features"]["agents"][int(aid)]
-                px, py = feat[0], feat[1]
-                dxg, dyg = feat[12], feat[13]
-                wp1_x, wp1_y = wps[0]
-                # dot product: (wp1-pos) · (dest-pos) > 0
-                dot = (wp1_x - px) * dxg + (wp1_y - py) * dyg
-                if dot <= 0:
-                    ok = False
-                    break
-            if ok:
-                kept.append(s)
-        n_dropped = len(self.samples) - len(kept)
-        self.samples = kept
-        if n_dropped:
-            print(f"  Filtered {n_dropped}/{n_dropped + len(kept)} samples (wrong waypoint direction)")
+        pass
 
     def __len__(self):
         return len(self.samples)
@@ -411,7 +391,8 @@ def train(args):
             local_y = -tx * sin_h + ty * cos_h
             target_flat = torch.stack([local_x, local_y], dim=-1).reshape(B, n_active, -1)
 
-            loss = compute_diffusion_loss(diffusion_head, target_flat, hidden)
+            goal_feat = agent_feat[:, :n_active, 12:14]
+            loss = compute_diffusion_loss(diffusion_head, target_flat, hidden, goal_features=goal_feat)
 
             optimizer.zero_grad()
             loss.backward()

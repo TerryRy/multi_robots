@@ -267,10 +267,13 @@ class OpenVLAPolicy:
             num_agents = features_dict.get("num_agents", 0)
             hidden = hidden[:, :num_agents, :]
 
+            goal_feat = agent_features[0, :num_agents, 12:14]  # dx_goal, dy_goal
+
             waypoints_tensor = ddim_sample(
                 self.diffusion_head, hidden,
                 ddim_steps=self.diffusion_steps,
                 eta=0.0,
+                goal_features=goal_feat.unsqueeze(0),
             )
 
             if self._step_debug < 5:

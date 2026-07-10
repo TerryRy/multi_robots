@@ -46,6 +46,7 @@ class DiffusionActionHead(nn.Module):
         super().__init__()
         self.chunk_size = chunk_size
         self.T = T
+        self.goal_dim = 2
 
         self.time_embed = nn.Sequential(
             SinusoidalTimeEmbedding(128),
@@ -55,7 +56,7 @@ class DiffusionActionHead(nn.Module):
         )
 
         self.input_proj = nn.Linear(chunk_size * 2, d_model)
-        self.cond_proj = nn.Linear(hidden_dim, d_model)
+        self.cond_proj = nn.Linear(hidden_dim + self.goal_dim, d_model)
         self.time_proj = nn.Linear(d_model, d_model)
 
         self.blocks = nn.ModuleList([
@@ -72,7 +73,7 @@ class DiffusionActionHead(nn.Module):
         nn.init.zeros_(self.output_proj[-1].weight)
         nn.init.zeros_(self.output_proj[-1].bias)
 
-    def forward(self, x_t, t, condition):
+    def forward(self, x_t, t, condition, goal_features=None):
         B, N, _ = x_t.shape
         dtype = next(self.parameters()).dtype
 
@@ -80,7 +81,10 @@ class DiffusionActionHead(nn.Module):
         t_emb = self.time_proj(t_emb[:, None, :].expand(-1, N, -1))
 
         x = self.input_proj(x_t.to(dtype))
-        c = self.cond_proj(condition.to(dtype))
+        c_input = condition.to(dtype)
+        if goal_features is not None:
+            c_input = torch.cat([c_input, goal_features.to(dtype)], dim=-1)
+        c = self.cond_proj(c_input)
         h = x + t_emb
 
         for block in self.blocks:
@@ -97,7 +101,7 @@ def _cosine_beta_schedule(T, s=0.008):
     return beta.float()
 
 
-def compute_diffusion_loss(model, x_0, condition, T=1000):
+def compute_diffusion_loss(model, x_0, condition, T=1000, goal_features=None):
     B = x_0.shape[0]
     device = x_0.device
 
@@ -116,7 +120,7 @@ def compute_diffusion_loss(model, x_0, condition, T=1000):
     sqrt_one_minus = (1 - alpha_bar[t]).sqrt().view(B, 1, 1)
     x_t = sqrt_alpha_bar * x_0 + sqrt_one_minus * noise
 
-    noise_pred = model(x_t, t.float(), condition)
+    noise_pred = model(x_t, t.float(), condition, goal_features=goal_features)
 
     if torch.isnan(noise_pred).any() or torch.isinf(noise_pred).any():
         print("WARNING: noise_pred contains NaN/Inf, skipping")
@@ -126,7 +130,7 @@ def compute_diffusion_loss(model, x_0, condition, T=1000):
 
 
 @torch.no_grad()
-def ddim_sample(model, condition, ddim_steps=50, T=1000, eta=0.0):
+def ddim_sample(model, condition, ddim_steps=50, T=1000, eta=0.0, goal_features=None):
     B, N, _ = condition.shape
     device = condition.device
 
@@ -146,7 +150,7 @@ def ddim_sample(model, condition, ddim_steps=50, T=1000, eta=0.0):
         t_next_val = timesteps[i + 1]
         t = torch.full((B,), t_val, device=device, dtype=torch.long)
 
-        noise_pred = model(x, t, condition)
+        noise_pred = model(x, t, condition, goal_features=goal_features)
 
         alpha_bar_t = alpha_bar[t_val]
         alpha_bar_next = alpha_bar[max(t_next_val, 0)]
