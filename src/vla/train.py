@@ -117,9 +117,20 @@ class VLADataset(Dataset):
 
 
 def train(args):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    world_size = int(os.environ.get("WORLD_SIZE", 1))
+    is_main = local_rank == 0
+
+    if world_size > 1:
+        torch.cuda.set_device(local_rank)
+        torch.distributed.init_process_group(backend="nccl", init_method="env://")
+        device = torch.device(f"cuda:{local_rank}")
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     dtype = torch.float32
-    print(f"Device: {device} | Dtype: {dtype}")
+    if is_main:
+        print(f"Device: {device} | GPUs: {world_size} | Dtype: {dtype}")
 
     # ---- Data directories & curriculum mixing ----
     data_mix = args.data_mix
@@ -139,8 +150,12 @@ def train(args):
         data_dirs, sample_ratios=sample_ratios,
         max_samples=args.max_samples, data_root=args.data_root,
     )
+    from torch.utils.data.distributed import DistributedSampler
+    sampler = DistributedSampler(dataset, num_replicas=world_size, rank=local_rank) if world_size > 1 else None
     loader = DataLoader(
-        dataset, batch_size=args.batch_size, shuffle=True,
+        dataset, batch_size=args.batch_size,
+        shuffle=sampler is None,
+        sampler=sampler,
         collate_fn=collate_vla,
     )
 
@@ -300,8 +315,18 @@ def train(args):
     trainable_llm = sum(p.numel() for p in llm.parameters() if p.requires_grad) / 1e6
     enc_params = sum(p.numel() for p in encoder.parameters()) / 1e3
     head_params = sum(p.numel() for p in diffusion_head.parameters()) / 1e3
-    print(f"LLM: {llm_params:.1f}B total | {trainable_llm:.1f}M trainable (LoRA)")
-    print(f"Encoder: {enc_params:.0f}K | DiffusionHead: {head_params:.0f}K")
+    if is_main:
+        print(f"LLM: {llm_params:.1f}B total | {trainable_llm:.1f}M trainable (LoRA)")
+        print(f"Encoder: {enc_params:.0f}K | DiffusionHead: {head_params:.0f}K")
+
+    # ---- DDP (DistributedDataParallel) ----
+    if world_size > 1:
+        encoder = torch.nn.parallel.DistributedDataParallel(encoder, device_ids=[local_rank])
+        diffusion_head = torch.nn.parallel.DistributedDataParallel(diffusion_head, device_ids=[local_rank])
+        if args.use_lora:
+            llm = torch.nn.parallel.DistributedDataParallel(llm, device_ids=[local_rank])
+        if is_main:
+            print(f"DDP wrapping done. World size: {world_size}")
 
     # ---- Optimizer ----
     params = list(encoder.parameters()) + list(diffusion_head.parameters())
@@ -316,9 +341,12 @@ def train(args):
     )
 
     # ---- Training loop (DDPM diffusion loss, unified float32) ----
-    print(f"\nTraining: {args.epochs} epochs x {len(loader)} steps/batch={args.batch_size}")
+    if is_main:
+        print(f"\nTraining: {args.epochs} epochs x {len(loader)} steps/batch={args.batch_size}")
     global_step = 0
     for epoch in range(args.epochs):
+        if sampler is not None:
+            sampler.set_epoch(epoch)
         llm.train() if args.use_lora else None
         encoder.train()
         diffusion_head.train()
@@ -403,20 +431,25 @@ def train(args):
             total_loss += loss.item()
             global_step += 1
 
-            if global_step % max(1, len(loader) // 5) == 0:
+            if is_main and global_step % max(1, len(loader) // 5) == 0:
                 lr_now = scheduler.get_last_lr()[0]
                 print(f"  E{epoch+1} [{global_step:5d}] loss={loss.item():.4f} lr={lr_now:.2e}")
 
         avg_loss = total_loss / len(loader)
-        print(f"  Epoch {epoch+1} avg_loss={avg_loss:.4f}")
+        if is_main:
+            print(f"  Epoch {epoch+1} avg_loss={avg_loss:.4f}")
 
-    # ---- Save ----
-    os.makedirs(args.save_dir, exist_ok=True)
-    torch.save(encoder.state_dict(), os.path.join(args.save_dir, "encoder.pt"))
-    torch.save(diffusion_head.state_dict(), os.path.join(args.save_dir, "diffusion_head.pt"))
-    if args.use_lora:
-        llm.save_pretrained(os.path.join(args.save_dir, "lora_adapter"))
-    print(f"Saved to {args.save_dir}/")
+    # ---- Save (rank 0 only) ----
+    if is_main:
+        os.makedirs(args.save_dir, exist_ok=True)
+        enc_sd = encoder.module.state_dict() if world_size > 1 else encoder.state_dict()
+        head_sd = diffusion_head.module.state_dict() if world_size > 1 else diffusion_head.state_dict()
+        torch.save(enc_sd, os.path.join(args.save_dir, "encoder.pt"))
+        torch.save(head_sd, os.path.join(args.save_dir, "diffusion_head.pt"))
+        if args.use_lora:
+            llm_mod = llm.module if world_size > 1 else llm
+            llm_mod.save_pretrained(os.path.join(args.save_dir, "lora_adapter"))
+        print(f"Saved to {args.save_dir}/")
 
 
 def collate_vla(batch):

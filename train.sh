@@ -3,7 +3,7 @@
 #SBATCH -p normal
 #SBATCH -A mscitsuperpod
 #SBATCH -N 1
-#SBATCH --gpus-per-node=1
+#SBATCH --gpus-per-node=2
 #SBATCH --cpus-per-task=8
 #SBATCH -t 12:00:00
 #SBATCH --mem=64G
@@ -55,10 +55,12 @@ LR=3e-5
 # 拼接基础参数
 BASE_ARGS="--model ${MODEL} --use-lora --lora-rank 128 --epochs ${EPOCHS} --batch-size ${BATCH} --lr ${LR}"
 
+LAUNCHER="torchrun --nproc_per_node=${SLURM_GPUS_PER_NODE:-1}"
+
 case $STAGE in
   1)
     echo "========== Stage 1: train from scratch (${AGENTS} agents) =========="
-    python vla/train.py \
+    $LAUNCHER vla/train.py \
         --data "${DATA_DIR}/stage_1" \
         ${BASE_ARGS} \
         --save-dir "${WEIGHT_DIR}/stage_1" \
@@ -66,7 +68,7 @@ case $STAGE in
     ;;
   2)
     echo "========== Stage 2: load stage_1, mix 20% stage_1 + 80% stage_2 =========="
-    python vla/train.py \
+    $LAUNCHER vla/train.py \
         --data-mix "${DATA_DIR}/stage_1:0.2,${DATA_DIR}/stage_2:0.8" \
         ${BASE_ARGS} \
         --load-encoder "${WEIGHT_DIR}/stage_1/encoder.pt" \
@@ -77,7 +79,7 @@ case $STAGE in
     ;;
   3)
     echo "========== Stage 3: load stage_2, mix 15+15+70% =========="
-    python vla/train.py \
+    $LAUNCHER vla/train.py \
         --data-mix "${DATA_DIR}/stage_1:0.15,${DATA_DIR}/stage_2:0.15,${DATA_DIR}/stage_3:0.7" \
         ${BASE_ARGS} \
         --load-encoder "${WEIGHT_DIR}/stage_2/encoder.pt" \
@@ -88,7 +90,7 @@ case $STAGE in
     ;;
   4)
     echo "========== Stage 4: load stage_3, mix 10+10+10+70% (pressure test) =========="
-    python vla/train.py \
+    $LAUNCHER vla/train.py \
         --data-mix "${DATA_DIR}/stage_1:0.1,${DATA_DIR}/stage_2:0.1,${DATA_DIR}/stage_3:0.1,${DATA_DIR}/stage_4:0.7" \
         ${BASE_ARGS} \
         --load-encoder "${WEIGHT_DIR}/stage_3/encoder.pt" \
