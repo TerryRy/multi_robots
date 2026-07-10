@@ -175,14 +175,12 @@ class OpenVLAPolicy:
         if isinstance(images, list) and all(isinstance(x, np.ndarray) for x in images):
             images = [Image.fromarray(x) for x in images]
 
+        vis_dtype = next(self.vision_encoder.parameters()).dtype
         pixel_values = torch.stack([self.img_preprocess(img) for img in images])
         pixel_values = torch.cat([pixel_values, pixel_values], dim=1)
-        pixel_values = pixel_values.to(device=self.device, dtype=self.llm.dtype)
+        pixel_values = pixel_values.to(device=self.device, dtype=vis_dtype)
 
-        if hasattr(self.vision_encoder, 'pixel_values') or hasattr(self.vision_encoder, 'forward'):
-            visual_feat = self.vision_encoder(pixel_values)
-        else:
-            visual_feat = self.vision_encoder(pixel_values.to(self.llm.dtype))
+        visual_feat = self.vision_encoder(pixel_values)
 
         if isinstance(visual_feat, tuple):
             visual_feat = visual_feat[0]
