@@ -96,7 +96,7 @@ print()
 print('=== State distribution ===')
 for state, count in state_counter.most_common():
     pct = 100 * count / total_agents
-    bar = '█' * (pct // 5)
+    bar = '█' * int(pct // 5)
     print(f'  {state:10s}: {count:5d} ({pct:5.1f}%) {bar}')
 
 print()
