@@ -3,7 +3,7 @@
 #SBATCH -p normal
 #SBATCH -A mscitsuperpod
 #SBATCH -N 1
-#SBATCH --gpus-per-node=2
+#SBATCH --gpus-per-node=4
 #SBATCH --cpus-per-task=8
 #SBATCH -t 12:00:00
 #SBATCH --mem=64G
@@ -49,7 +49,7 @@ cd ${SRC_DIR}
 # 使用 HF 模型 ID, 从持久缓存加载
 MODEL="openvla/openvla-7b"
 EPOCHS=8
-BATCH=2
+BATCH=1
 LR=3e-5
 
 # 拼接基础参数
