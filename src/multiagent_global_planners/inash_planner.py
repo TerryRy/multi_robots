@@ -70,7 +70,7 @@ class INashRRT(MultiAgentPlanner):
     MAX_NODES_EXPANDED = 10000
     MAX_SEARCH_TIME = 10 # 50s
     RADIUS = 1.5 # max state distance when rewind, find nearest or parent
-    VISUAL = True # show search process for debug/visualization
+    VISUAL = False # show search process for debug/visualization
     ETA = 5 # max length of steering is at most ETA
     REACT_INTERVAL = 1 # recompute a best response after each agent has extend another several states
     LOCAL_STEPS_LIMIT = 100 # local simulation step limit

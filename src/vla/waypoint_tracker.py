@@ -41,6 +41,9 @@ class WaypointTracker:
         speed = min(self.agent.cruise_speed, dist / self.dt * 0.8)
         speed = min(speed, max_step / self.dt)
 
+        if dist < 0.3:
+            speed = min(speed, dist * 4.0)
+
         norm = max(0.001, dist)
         vx = dx / norm * speed
         vy = dy / norm * speed

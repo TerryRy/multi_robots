@@ -29,7 +29,7 @@ class MARRTStar(MultiAgentPlanner):
     MAX_NODES_EXPANDED = 10000
     MAX_SEARCH_TIME = 60 # 50s
     RADIUS = 1.5 # max state distance when rewind, find nearest or parent
-    VISUAL = True # show search process for debug/visualization
+    VISUAL = False # show search process for debug/visualization
     report_time = 5 # report search progress every time interval
     
     MAP = MapType.CONTINUOUS

@@ -10,14 +10,15 @@
 #SBATCH --mail-user=txueae@connect.ust.hk
 #SBATCH --mail-type=BEGIN,END,FAIL
 
-# 数据收集: 生成训练数据
-# 统一使用 HRVOPlanner (主动避让)
+# 数据收集: 用 MARRTStar 联合多机规划器, 生成高协调质量训练数据
 # 地图按 robot 密度 0.011/m² 等比缩放
 # 航点步距 stride=4 (8航点覆盖 32步 = 0.53s)
+# MARRTStar: joint-state-space RRT*, 天然避让多机碰撞
 
 STAGE=${1:?"Usage: $0 <stage> [sim_minutes]; stage=1|2|3|4"}
 SIM_TIME=${2:-""}
 
+GP="MARRTStar"
 LP="HRVOPlanner"
 STRIDE=4
 
@@ -73,7 +74,7 @@ mkdir -p ${DATA_DIR}
 
 echo "========================"
 echo "Stage $STAGE: ${AGENTS} agents, ${LOAD_PORTS}/${UNLOAD_PORTS} ports"
-echo "Map: ${MAP_W}x${MAP_H} | LP: ${LP} | Stride: ${STRIDE}"
+echo "Map: ${MAP_W}x${MAP_H} | GP: ${GP} | LP: ${LP} | Stride: ${STRIDE}"
 echo "Mix: ${MIX_ARGS:-pure expert}"
 echo "Data: ${DATA_DIR}/stage_${STAGE}/"
 echo "========================"
@@ -84,6 +85,7 @@ cd ${SRC_DIR}
 python simulator.py --vla-collect -t ${SIM_TIME} \
     --agent ${AGENTS} --port ${LOAD_PORTS} ${UNLOAD_PORTS} \
     --size ${MAP_W} ${MAP_H} \
+    --gp ${GP} --lp ${LP} \
     ${MIX_ARGS}
 
 echo ""

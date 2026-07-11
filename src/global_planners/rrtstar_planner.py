@@ -38,13 +38,19 @@ class RRTStar(GlobalPlanner):
     def compute_path(self, position, goal_pose, continous_space, sensor_observation):
         print("agent {} search path via RRT* ... ".format(self.agent.id))
         #main
-        self.debug_screen = pygame.display.get_surface()
+        try:
+            self.debug_screen = pygame.display.get_surface()
+        except Exception:
+            self.debug_screen = None
         start_search_time = time.time()
 
         '''for debug visualization'''
         if RRTStar.VISUAL:
             draw_circle(self.debug_screen, color_dict[self.agent.id], goal_pose, 7)
-            pygame.display.flip()
+            try:
+                pygame.display.flip()
+            except Exception:
+                pass
         '''end for debug visualization'''
         
         init_state = State(position.x, position.y, 0)
@@ -74,7 +80,10 @@ class RRTStar(GlobalPlanner):
             if RRTStar.VISUAL:
                 draw_circle(self.debug_screen, color_dict[self.agent.id], new_state, 2)
                 draw_line(self.debug_screen, color_dict[self.agent.id], new_parent, new_state)
-                pygame.display.flip()
+                try:
+                    pygame.display.flip()
+                except Exception:
+                    pass
             '''end for debug visualization'''
 
             states_list = self.rewind(continous_space, states_list, new_state)

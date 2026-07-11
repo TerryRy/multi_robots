@@ -1,9 +1,10 @@
 import random
+from math import cos, sin, atan2, pi as math_pi
 from vla.state_serializer import StateSerializer
 from vla.waypoint_tracker import WaypointTracker
 from vla.data_collector import DataCollector
 from vla.renderer import SimulatorRenderer
-from math import cos, sin
+from agents.agent_state_machine import AgentState
 
 DEBUG = False
 
@@ -115,7 +116,7 @@ class VLAController:
                 ps = self._pending_state[0]
                 start = ps["step"]
                 total_steps = self.chunk_size * self._stride
-                if len(self._pos_history[ps["agent_ids"][0]]) < start + total_steps:
+                if len(self._pos_history[ps["agent_ids"][0]]) < start + total_steps + 1:
                     break
                 self._pending_state.pop(0)
                 waypoints = {}
@@ -161,8 +162,14 @@ class VLAController:
             tracker = self.trackers.get(agent.id)
             if tracker is None:
                 continue
+
+            if hasattr(agent, 'state') and agent.state not in (AgentState.CRUISE, AgentState.PREQUEUE, AgentState.QUEUING):
+                agent.linear_velocity = (0.0, 0.0)
+                continue
+
             if not tracker.has_waypoints():
                 continue
+
             position = agent.position
             if hasattr(position, 'x'):
                 from geometry import Point
@@ -179,7 +186,14 @@ class VLAController:
     def _run_random_control(self, simulator):
         for agent in self.agents:
             import random as rnd
-            angle = rnd.uniform(0, 2 * 3.14159)
+            dest = agent.destination_location
+            if dest is not None and hasattr(dest, 'x'):
+                dx = dest.x - agent.position.x
+                dy = dest.y - agent.position.y
+                goal_angle = atan2(dy, dx)
+            else:
+                goal_angle = rnd.uniform(0, 2 * math_pi)
+            angle = goal_angle + rnd.uniform(-0.5, 0.5)
             speed = rnd.uniform(0, agent.cruise_speed * 0.5)
             agent.linear_velocity = (cos(angle) * speed, sin(angle) * speed)
 

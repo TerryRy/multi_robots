@@ -43,12 +43,19 @@ class VLADataset(Dataset):
         self.base_dirs = []
 
         for dir_idx, dir_path in enumerate(data_dirs):
-            if not os.path.isabs(dir_path):
-                abs_dir = os.path.join(data_root, dir_path)
-            else:
-                abs_dir = dir_path
+            abs_dir = dir_path
             if not os.path.isdir(abs_dir):
-                abs_dir = dir_path
+                abs_dir = os.path.join(data_root, dir_path)
+            if not os.path.isdir(abs_dir):
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                abs_dir = os.path.join(script_dir, "..", dir_path)
+            if not os.path.isdir(abs_dir):
+                abs_dir = os.path.join(script_dir, "..", data_root, dir_path)
+            if not os.path.isdir(abs_dir):
+                raise FileNotFoundError(
+                    f"Data directory not found: tried '{dir_path}', "
+                    f"'{os.path.join(data_root, dir_path)}', "
+                    f"and relative to script dir '{script_dir}/..'")
 
             for fname in sorted(os.listdir(abs_dir)):
                 if not fname.endswith(".jsonl"):
@@ -75,6 +82,16 @@ class VLADataset(Dataset):
         else:
             self.instance_weights = [1.0] * len(self.samples)
 
+        self._feature_dim = 0
+        if self.samples:
+            first = self.samples[0]
+            if "features" in first and "agents" in first["features"]:
+                agents = first["features"]["agents"]
+                if agents and len(agents) > 0:
+                    self._feature_dim = len(agents[0])
+        if self._feature_dim > 0:
+            print(f"VLADataset: detected feature_dim={self._feature_dim}")
+
         self._filter_waypoint_direction()
 
         if max_samples and max_samples < len(self.samples):
@@ -88,8 +105,27 @@ class VLADataset(Dataset):
 
         print(f"VLADataset: {len(self.samples)} samples from {len(data_dirs)} sources")
 
+    @property
+    def feature_dim(self):
+        return self._feature_dim if self._feature_dim > 0 else 55
+
     def _filter_waypoint_direction(self):
-        pass
+        if len(self.samples) < 20:
+            return
+        filtered = []
+        for i, sample in enumerate(self.samples):
+            text = sample.get("text_prompt", "")
+            if "Collisions:" in text and "AA=0 AO=0" not in text:
+                continue
+            filtered.append(i)
+        if len(filtered) > max(10, len(self.samples) * 0.1):
+            removed = len(self.samples) - len(filtered)
+            self.samples = [self.samples[i] for i in filtered]
+            self.sources = [self.sources[i] for i in filtered]
+            self.base_dirs = [self.base_dirs[i] for i in filtered]
+            self.instance_weights = [self.instance_weights[i] for i in filtered]
+            print(f"  Filtered {removed} collision frames, "
+                  f"{len(self.samples)} remaining")
 
     def __len__(self):
         return len(self.samples)
@@ -98,6 +134,14 @@ class VLADataset(Dataset):
         record = self.samples[idx]
 
         agents_feat = torch.tensor(record["features"]["agents"], dtype=torch.float32)
+
+        target_dim = 59
+        if agents_feat.shape[-1] < target_dim:
+            padding = torch.zeros(agents_feat.shape[0],
+                                  target_dim - agents_feat.shape[-1],
+                                  dtype=torch.float32)
+            agents_feat = torch.cat([agents_feat, padding], dim=-1)
+
         text_prompt = record["text_prompt"]
         target = record["target_action"]
 
@@ -279,7 +323,7 @@ def train(args):
         llm = llm.float()
 
     # ---- MLP encoder + Diffusion head ----
-    encoder = AgentFeatureEncoder(input_dim=55, hidden_dim=512, output_dim=hidden_dim)
+    encoder = AgentFeatureEncoder(input_dim=59, hidden_dim=512, output_dim=hidden_dim)
     encoder = encoder.to(device=device, dtype=dtype)
 
     diffusion_head = DiffusionActionHead(
@@ -416,8 +460,20 @@ def train(args):
             local_y = -tx * sin_h + ty * cos_h
             target_flat = torch.stack([local_x, local_y], dim=-1).reshape(B, n_active, -1)
 
-            goal_feat = agent_feat[:, :n_active, 12:14]
+            goal_global = agent_feat[:, :n_active, 12:14]
+            goal_local_x = goal_global[:, :, 0:1] * cos_h + goal_global[:, :, 1:2] * sin_h
+            goal_local_y = -goal_global[:, :, 0:1] * sin_h + goal_global[:, :, 1:2] * cos_h
+            goal_feat = torch.cat([goal_local_x, goal_local_y], dim=-1)
             loss = compute_diffusion_loss(diffusion_head, target_flat, hidden, goal_features=goal_feat)
+
+            goal_angle = torch.atan2(goal_feat[:, :, 1], goal_feat[:, :, 0])
+            lidar_bin = ((goal_angle + 1.57079633) / 3.14159265 * 16).long().clamp(0, 15)
+            lidar_feat = agent_feat[:, :n_active, 36:52]
+            goal_lidar = lidar_feat.gather(-1, lidar_bin.unsqueeze(-1)).squeeze(-1)
+            nearest_obs = agent_feat[:, :n_active, 52]
+            is_mobile = agent_feat[:, :n_active, 7] + agent_feat[:, :n_active, 9]
+            collision_penalty = (torch.relu(0.5 - goal_lidar) + torch.relu(0.5 - nearest_obs)) * is_mobile
+            loss = loss + 0.05 * collision_penalty.mean()
 
             optimizer.zero_grad()
             loss.backward()

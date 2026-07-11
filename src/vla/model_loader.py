@@ -31,7 +31,7 @@ class MockVLAPolicy:
 
 
 class AgentFeatureEncoder(nn.Module):
-    def __init__(self, input_dim=55, hidden_dim=512, output_dim=4096):
+    def __init__(self, input_dim=59, hidden_dim=512, output_dim=4096):
         super().__init__()
         self.mlp = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
@@ -54,7 +54,7 @@ class OpenVLAPolicy:
 
     Architecture:
       Image (224x224) → SigLIP (frozen) → visual tokens → Projector (frozen) → [S, 4096]
-      55-dim features  → MLP Encoder (trainable)                    → agent tokens [N, 4096]
+      59-dim features  → MLP Encoder (trainable)                    → agent tokens [N, 4096]
       text prompt      → tokenizer (frozen) → text tokens [T]
       → concat [vis_tokens + agent_tokens + text_tokens] → Llama2-7B (LoRA)
       → hidden states for agent tokens → DiffusionActionHead (trainable) → waypoints
@@ -143,7 +143,7 @@ class OpenVLAPolicy:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
         self.feature_encoder = AgentFeatureEncoder(
-            input_dim=55, hidden_dim=512, output_dim=hidden_dim,
+            input_dim=59, hidden_dim=512, output_dim=hidden_dim,
         ).to(device=self.device, dtype=self.llm.dtype)
 
         self.diffusion_head = DiffusionActionHead(
@@ -266,7 +266,12 @@ class OpenVLAPolicy:
             num_agents = features_dict.get("num_agents", 0)
             hidden = hidden[:, :num_agents, :]
 
-            goal_feat = agent_features[0, :num_agents, 12:14]  # dx_goal, dy_goal
+            heading_cos = agent_features[0, :num_agents, 2:3]
+            heading_sin = agent_features[0, :num_agents, 3:4]
+            goal_global = agent_features[0, :num_agents, 12:14]
+            goal_local_x = goal_global[:, 0:1] * heading_cos + goal_global[:, 1:2] * heading_sin
+            goal_local_y = -goal_global[:, 0:1] * heading_sin + goal_global[:, 1:2] * heading_cos
+            goal_feat = torch.cat([goal_local_x, goal_local_y], dim=-1)
 
             waypoints_tensor = ddim_sample(
                 self.diffusion_head, hidden,

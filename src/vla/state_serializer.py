@@ -228,6 +228,29 @@ class StateSerializer:
 
         return "\n".join(parts)
 
+    def _nearest_port(self, agent_pos, ports, agent_heading):
+        best_dist, best_angle, best_type = 4.0, 0.0, 0.0
+        px, py = agent_pos[0], agent_pos[1]
+        for p in ports:
+            ppos = p["position"]
+            dx = ppos[0] - px
+            dy = ppos[1] - py
+            dist = sqrt(dx * dx + dy * dy)
+            if dist < best_dist:
+                best_dist = dist
+                rel_angle = atan2(dy, dx) - agent_heading
+                while rel_angle > pi:
+                    rel_angle -= 2 * pi
+                while rel_angle < -pi:
+                    rel_angle += 2 * pi
+                best_angle = rel_angle
+                best_type = 1.0 if p.get("type") == "loading" else 0.0
+        return [
+            best_dist,
+            cos(best_angle), sin(best_angle),
+            best_type,
+        ]
+
     def _build_features(self, agents, ports, obstacles):
 
         state_onehot_map = {
@@ -295,11 +318,13 @@ class StateSerializer:
                 cos(ob_ang_rad), sin(ob_ang_rad),
             ]
 
-            encoded = self_features + neighbor_features + lidar_features + obstacle_features
+            port_features = self._nearest_port(pos, ports, heading_rad)
+
+            encoded = self_features + neighbor_features + lidar_features + obstacle_features + port_features
             encoded_agents.append(encoded)
 
         while len(encoded_agents) < max_agents:
-            encoded_agents.append([0.0] * len(encoded_agents[0]) if encoded_agents else [0.0] * 50)
+            encoded_agents.append([0.0] * len(encoded_agents[0]) if encoded_agents else [0.0] * 59)
 
         port_features = []
         for p in ports[:max_ports]:

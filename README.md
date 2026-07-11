@@ -88,7 +88,7 @@ dorabot_minions-master/
 
 ### 一句话总结
 
-**用 OpenVLA-7B 的预训练 Llama2-7B 主干作为"协调脑"，抛弃其原始 SigLIP 视觉编码器，换成自定义 MLP 编码器处理 55 维结构化特征，输出 8-step action chunking 的 waypoint 序列。**
+**用 OpenVLA-7B 的预训练 Llama2-7B 主干作为"协调脑"，抛弃其原始 SigLIP 视觉编码器，换成自定义 MLP 编码器处理 59 维结构化特征，输出 8-step action chunking 的 waypoint 序列。**
 
 ### 为什么这样设计
 
@@ -113,10 +113,10 @@ dorabot_minions-master/
 │     │     ├── agents: 位置, 角度, 状态, LiDAR(16bin), 邻居     │
 │     │     ├── ports: 位置, 队列                           │
 │     │     └── obstacles                                      │
-│     │     → text_prompt + 55-dim feature vector × 12 agents   │
+    │     │     → text_prompt + 59-dim feature vector × 12 agents   │
 │     │                                                        │
 │     ├── OpenVLAPolicy.predict()                               │
-│     │     ├── MLP encoder: [batch, 12, 55] → [batch, 12, 4096]│
+    │     │     ├── MLP encoder: [batch, 12, 59] → [batch, 12, 4096]│
 │     │     ├── Tokenizer: text → [batch, seq, 4096]        │
 │     │     ├── Llama2-7B (frozen + LoRA): forward pass          │
 │     │     └── Action head: [batch, 12, 4096] → [batch,12,16]   │
@@ -129,7 +129,7 @@ dorabot_minions-master/
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### VLA 输入特征结构（55 维 / agent）
+### VLA 输入特征结构（59 维 / agent）
 
 | 特征 | 维度 | 说明 |
 |---|---|---|
@@ -143,6 +143,7 @@ dorabot_minions-master/
 | 邻居（×4） | 20 | (dist, cos rel_angle, sin rel_angle, cos hd_diff, sin hd_diff) × 4 |
 | LiDAR 降采样 | 16 | 512 rays → 16 bins |
 | 最近障碍 | 3 | (dist, cos obs_angle, sin obs_angle) |
+| 最近端口 | 4 | (dist, cos rel_angle, sin rel_angle, is_loading) |
 
 ### 动作输出格式（8-step action chunking）
 
