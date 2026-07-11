@@ -18,8 +18,6 @@
 STAGE=${1:?"Usage: $0 <stage> [sim_minutes]; stage=1|2|3|4"}
 SIM_TIME=${2:-""}
 
-GP="LayeredAStar"
-LP="HRVOPlanner"
 STRIDE=4
 
 case $STAGE in
@@ -74,7 +72,7 @@ mkdir -p ${DATA_DIR}
 
 echo "========================"
 echo "Stage $STAGE: ${AGENTS} agents, ${LOAD_PORTS}/${UNLOAD_PORTS} ports"
-echo "Map: ${MAP_W}x${MAP_H} | GP: ${GP} | LP: ${LP} | Stride: ${STRIDE}"
+echo "Map: ${MAP_W}x${MAP_H} | Stride: ${STRIDE}"
 echo "Mix: ${MIX_ARGS:-pure expert}"
 echo "Data: ${DATA_DIR}/stage_${STAGE}/"
 echo "========================"
@@ -85,7 +83,6 @@ cd ${SRC_DIR}
 python simulator.py --vla-collect -t ${SIM_TIME} \
     --agent ${AGENTS} --port ${LOAD_PORTS} ${UNLOAD_PORTS} \
     --size ${MAP_W} ${MAP_H} \
-    --gp ${GP} --lp ${LP} \
     ${MIX_ARGS}
 
 echo ""
