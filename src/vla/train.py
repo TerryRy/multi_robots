@@ -263,9 +263,9 @@ def train(args):
         if args.quantize and device.type == "cuda":
             from transformers import BitsAndBytesConfig
             load_kwargs["quantization_config"] = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float32,
+                load_in_8bit=True,
             )
+            load_kwargs["device_map"] = "auto"
         else:
             load_kwargs["torch_dtype"] = dtype
             if device.type == "cuda":
