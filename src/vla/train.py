@@ -355,16 +355,31 @@ def train(args):
     diffusion_head = diffusion_head.to(device=device, dtype=dtype)
 
     # ---- Load checkpoints (incremental training) ----
+    def _resolve_path(p):
+        if p is None or os.path.isabs(p) or os.path.exists(p):
+            return p
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        alt = os.path.join(script_dir, "..", p)
+        if os.path.exists(alt):
+            return alt
+        alt = os.path.join(script_dir, "..", "..", p)
+        if os.path.exists(alt):
+            return alt
+        return p
+
     if args.load_encoder:
-        encoder.load_state_dict(torch.load(args.load_encoder, map_location=device))
-        print(f"Loaded encoder: {args.load_encoder}")
+        path = _resolve_path(args.load_encoder)
+        encoder.load_state_dict(torch.load(path, map_location=device))
+        print(f"Loaded encoder: {path}")
     if args.load_action_head:
-        diffusion_head.load_state_dict(torch.load(args.load_action_head, map_location=device))
-        print(f"Loaded diffusion_head: {args.load_action_head}")
+        path = _resolve_path(args.load_action_head)
+        diffusion_head.load_state_dict(torch.load(path, map_location=device))
+        print(f"Loaded diffusion_head: {path}")
     if args.load_lora and args.use_lora:
         from peft import PeftModel
-        llm = PeftModel.from_pretrained(llm, args.load_lora)
-        print(f"Loaded LoRA: {args.load_lora}")
+        path = _resolve_path(args.load_lora)
+        llm = PeftModel.from_pretrained(llm, path)
+        print(f"Loaded LoRA: {path}")
 
     # ---- Image preprocessing ----
     img_preprocess = None
