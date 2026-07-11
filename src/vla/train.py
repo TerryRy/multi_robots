@@ -379,6 +379,10 @@ def train(args):
         from peft import PeftModel
         path = _resolve_path(args.load_lora)
         llm = PeftModel.from_pretrained(llm, path)
+        for n, p in llm.named_parameters():
+            if 'lora' in n:
+                p.requires_grad = True
+        llm.enable_input_require_grads()
         print(f"Loaded LoRA: {path}")
 
     # ---- Image preprocessing ----
