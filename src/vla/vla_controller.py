@@ -1,4 +1,3 @@
-import os
 import random
 from math import cos, sin, atan2, pi as math_pi
 from vla.state_serializer import StateSerializer
@@ -35,31 +34,15 @@ class VLAController:
             from vla.model_loader import load_mock_policy
             self._model = load_mock_policy(self.action_mode)
         else:
-            ckpt = config.get("checkpoint_dir", "")
-            fast_ckpt = os.path.join(ckpt, "fast_lm.pt") if ckpt else ""
-            if os.path.isfile(fast_ckpt):
-                from vla.model_loader import FastVLAPolicy
-                device = config.get("device", "cpu")
-                print(f"  Fast checkpoint detected: {fast_ckpt}")
-                self._model = FastVLAPolicy(
-                    encoder_path=os.path.join(ckpt, "encoder.pt"),
-                    fast_lm_path=os.path.join(ckpt, "fast_lm.pt"),
-                    action_head_path=os.path.join(ckpt, "diffusion_head.pt"),
-                    device=device,
-                    action_mode=self.action_mode,
-                    chunk_size=self.chunk_size,
-                )
-            else:
-                from vla.model_loader import load_openvla_policy
-                model_id = config.get("model_id", "openvla/openvla-7b")
-                device = config.get("device", "cpu")
-                self._model = load_openvla_policy(
-                    model_id=model_id, device=device,
-                    action_mode=self.action_mode, chunk_size=self.chunk_size,
-                )
+            from vla.model_loader import load_openvla_policy
+            model_id = config.get("model_id", "openvla/openvla-7b")
+            device = config.get("device", "cpu")
+            self._model = load_openvla_policy(
+                model_id=model_id, device=device,
+                action_mode=self.action_mode, chunk_size=self.chunk_size,
+            )
 
-        if not self.use_mock and config.get("checkpoint_dir") and not os.path.isfile(
-            os.path.join(config["checkpoint_dir"], "fast_lm.pt")):
+        if not self.use_mock and config.get("checkpoint_dir"):
             ckpt = config["checkpoint_dir"]
             print(f"Loading VLA checkpoint: {ckpt}")
             self._model.load_checkpoint(ckpt)

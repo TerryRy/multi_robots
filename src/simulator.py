@@ -447,10 +447,7 @@ def start_simulator(args, receive_q = None, send_q = None):
     
     # Initialize VLA controller if --vla flag is set
     if cmd_args.use_vla or cmd_args.vla_collect:
-        use_mock = cmd_args.vla_model is None and (
-            cmd_args.vla_checkpoint is None or
-            not os.path.exists(os.path.join(cmd_args.vla_checkpoint, "fast_lm.pt"))
-        )
+        use_mock = cmd_args.vla_model is None
         vla_config = {
             "chunk_size": 8,
             "steps_per_sec": config_data['simulator']['steps_per_sec'],
@@ -467,11 +464,8 @@ def start_simulator(args, receive_q = None, send_q = None):
         if cmd_args.vla_collect:
             print(f"Data collection mode | Mix: {cmd_args.data_mix}")
         else:
-            if cmd_args.vla_checkpoint and os.path.exists(os.path.join(cmd_args.vla_checkpoint, "fast_lm.pt")):
-                print(f"VLA mode: using fast checkpoint ({cmd_args.vla_checkpoint})")
-            else:
-                model_str = cmd_args.vla_model or "mock"
-                print(f"VLA mode: using {model_str}")
+            model_str = cmd_args.vla_model or "mock"
+            print(f"VLA mode: using {model_str}")
     else:
         simulator.vla_controller = None
     

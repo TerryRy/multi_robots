@@ -15,18 +15,18 @@
 # 不需要 HF Token (读取本地 ~/ip/models/openvla-7b)
 #
 #   sbatch train.sh <stage> [extra_args...]
-#     stage: 1 | 2 | 3 | 4 | fast
-#     fast: 轻量模式, 跳过 OpenVLA-7B, 仅训练 encoder+projector+diffusion head
+#     stage: 1 | 2 | 3 | 4 | quick
+#     quick: 最小规模 OpenVLA-7B 训练, 验证管线不崩溃
+#            (2 epochs × 200 samples, --quantize, ~10min)
 #
 # 示例:
 #   sbatch train.sh 1                        # Stage 1: 从头训练
 #   sbatch train.sh 2                        # Stage 2: 加载 stage_1
 #   sbatch train.sh 3 --epochs 30 --lr 5e-5  # 自定义参数
-#   sbatch train.sh fast                     # Fast 快速验证模式
-#   sbatch train.sh fast --data /path/to/data --epochs 10
+#   sbatch train.sh quick                    # 快速管线验证
 # =============================================
 
-STAGE=${1:?"Usage: $0 <stage> [extra_args]; stage=1|2|3|4|fast"}
+STAGE=${1:?"Usage: $0 <stage> [extra_args]; stage=1|2|3|4|quick"}
 shift  # 移除 stage, 剩余参数传递给 train.py
 EXTRA_ARGS="$@"
 
@@ -59,16 +59,13 @@ LR=3e-5
 BASE_ARGS="--model ${MODEL} --use-lora --lora-rank 128 --epochs ${EPOCHS} --batch-size ${BATCH} --lr ${LR}"
 
 case $STAGE in
-  fast)
-    echo "========== Fast mode: encoder + projector + diffusion head (no LLM) =========="
-    FAST_DATA="${DATA_DIR}/stage_1"
-    FAST_EPOCHS=5
-    FAST_BATCH=8
+  quick)
+    echo "========== Quick mode: minimal OpenVLA-7B + LoRA (pipeline smoke test) =========="
     python vla/train.py \
-        --fast \
-        --data "${FAST_DATA}" \
-        --epochs ${FAST_EPOCHS} --batch-size ${FAST_BATCH} \
-        --save-dir "${WEIGHT_DIR}/stage_fast" \
+        --model ${MODEL} --use-lora --lora-rank 128 --quantize \
+        --data "${DATA_DIR}/stage_1" \
+        --epochs 2 --batch-size 1 --max-samples 200 --lr ${LR} \
+        --save-dir "${WEIGHT_DIR}/stage_quick" \
         ${EXTRA_ARGS}
     ;;
   1)
@@ -113,15 +110,11 @@ case $STAGE in
         ${EXTRA_ARGS}
     ;;
   *)
-    echo "Error: stage must be 1, 2, 3, 4, or fast (got: $STAGE)"
+    echo "Error: stage must be 1, 2, 3, 4, or quick (got: $STAGE)"
     exit 1
     ;;
 esac
 
 echo ""
 echo "Stage ${STAGE} completed at $(date)"
-if [ "$STAGE" = "fast" ]; then
-    ls -lh "${WEIGHT_DIR}/stage_fast/"
-else
-    ls -lh "${WEIGHT_DIR}/stage_${STAGE}/"
-fi
+ls -lh "${WEIGHT_DIR}/stage_${STAGE}/"
