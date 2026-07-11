@@ -107,7 +107,7 @@ def compute_diffusion_loss(model, x_0, condition, T=1000, goal_features=None):
 
     if torch.isnan(x_0).any() or torch.isinf(x_0).any():
         print("WARNING: x_0 contains NaN/Inf, skipping")
-        return torch.tensor(0.0, device=device, requires_grad=True)
+        return torch.tensor(0.0, device=device, requires_grad=True), None, None, None
 
     t = torch.randint(0, T // 2, (B,), device=device)
     noise = torch.randn_like(x_0)
@@ -122,11 +122,13 @@ def compute_diffusion_loss(model, x_0, condition, T=1000, goal_features=None):
 
     noise_pred = model(x_t, t.float(), condition, goal_features=goal_features)
 
+    pred_x0 = (x_t - sqrt_one_minus * noise_pred) / (sqrt_alpha_bar + 1e-8)
+
     if torch.isnan(noise_pred).any() or torch.isinf(noise_pred).any():
         print("WARNING: noise_pred contains NaN/Inf, skipping")
-        return torch.tensor(0.0, device=device, requires_grad=True)
+        return torch.tensor(0.0, device=device, requires_grad=True), None, None, None
 
-    return F.mse_loss(noise_pred, noise)
+    return F.mse_loss(noise_pred, noise), noise_pred, x_t, t
 
 
 @torch.no_grad()

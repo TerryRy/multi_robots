@@ -27,7 +27,7 @@ import numpy as np
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from vla.model_loader import AgentFeatureEncoder, FastProjector
-from vla.diffusion_head import DiffusionActionHead, compute_diffusion_loss
+from vla.diffusion_head import DiffusionActionHead, compute_diffusion_loss, _cosine_beta_schedule
 
 
 class VLADataset(Dataset):
@@ -499,8 +499,37 @@ def train(args):
             goal_local_x = goal_global[:, :, 0:1] * cos_h + goal_global[:, :, 1:2] * sin_h
             goal_local_y = -goal_global[:, :, 0:1] * sin_h + goal_global[:, :, 1:2] * cos_h
             goal_feat = torch.cat([goal_local_x, goal_local_y], dim=-1)
-            loss = compute_diffusion_loss(diffusion_head, target_flat, hidden, goal_features=goal_feat)
+            loss, noise_pred, x_t, t = compute_diffusion_loss(diffusion_head, target_flat, hidden, goal_features=goal_feat)
 
+            if noise_pred is not None and t is not None:
+                beta = _cosine_beta_schedule(1000).to(device)
+                alpha = 1 - beta
+                alpha_bar = torch.cumprod(alpha, dim=0)
+                sqrt_alpha_bar_t = alpha_bar[t].sqrt().view(B, 1, 1)
+                sqrt_one_minus_t = (1 - alpha_bar[t]).sqrt().view(B, 1, 1)
+                pred_x0 = (x_t - sqrt_one_minus_t * noise_pred) / (sqrt_alpha_bar_t + 1e-8)
+
+                pred_local = pred_x0.reshape(B, n_active, -1, 2)
+                wp_vec = pred_local[:, :, -1, :] - pred_local[:, :, 0, :]
+
+                goal_norm = goal_feat.norm(dim=-1, keepdim=True) + 1e-8
+                wp_norm = wp_vec.norm(dim=-1, keepdim=True) + 1e-8
+                cos_sim = (wp_vec * goal_feat).sum(-1) / (wp_norm.squeeze(-1) * goal_norm.squeeze(-1) + 1e-8)
+                dir_loss = (1.0 - cos_sim).clamp(min=0.0)
+
+                nearest_obs = agent_feat[:, :n_active, 52]
+                min_lidar = agent_feat[:, :n_active, 36:52].min(dim=-1).values
+                near_port = agent_feat[:, :n_active, 7]
+
+                obs_safe = torch.sigmoid((nearest_obs - 0.5) / 0.2)
+                lidar_safe = torch.sigmoid((min_lidar - 0.5) / 0.2)
+                port_safe = 1.0 - near_port
+                safety = obs_safe * lidar_safe * port_safe
+
+                dir_weighted = (dir_loss * safety).mean()
+                loss = loss + 0.1 * dir_weighted
+
+            nearest_obs = agent_feat[:, :n_active, 52]
             goal_angle = torch.atan2(goal_feat[:, :, 1], goal_feat[:, :, 0])
             lidar_bin = ((goal_angle + 1.57079633) / 3.14159265 * 16).long().clamp(0, 15)
             lidar_feat = agent_feat[:, :n_active, 36:52]
