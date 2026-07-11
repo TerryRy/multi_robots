@@ -24,10 +24,115 @@ class MockVLAPolicy:
             sx, sy = dx / 8.0, dy / 8.0
             wps, cx, cy = [], px, py
             for _ in range(8):
-                cx, cy = cx + sx, cy + sy
+                cx, cy = cx + sx, cx + sy
                 wps.append((round(cx, 4), round(cy, 4)))
             waypoints[str(i)] = wps
         return waypoints
+
+
+class FastProjector(nn.Module):
+    def __init__(self, dim=512):
+        super().__init__()
+        self.config = type('obj', (object,), {'hidden_size': dim})
+        self.norm = nn.LayerNorm(dim)
+        self.proj = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.ReLU(),
+            nn.Linear(dim, dim),
+        )
+
+    def forward(self, x):
+        return self.norm(self.proj(self.norm(x)) + x)
+
+
+class FastVLAPolicy:
+    def __init__(self, encoder_path=None, fast_lm_path=None, action_head_path=None,
+                 device="cpu", action_mode="continuous", chunk_size=8, diffusion_steps=100,
+                 hidden_dim=512):
+        self.device = device
+        self.action_mode = action_mode
+        self.chunk_size = chunk_size
+        self.diffusion_steps = diffusion_steps
+        self.hidden_dim = hidden_dim
+
+        self.feature_encoder = AgentFeatureEncoder(
+            input_dim=59, hidden_dim=512, output_dim=hidden_dim,
+        ).to(device)
+
+        self.fast_lm = FastProjector(hidden_dim).to(device)
+
+        self.diffusion_head = DiffusionActionHead(
+            hidden_dim=hidden_dim, chunk_size=chunk_size,
+        ).to(device)
+
+        if encoder_path:
+            self.feature_encoder.load_state_dict(
+                torch.load(encoder_path, map_location=device, weights_only=True)
+            )
+            print(f"  Loaded fast encoder: {encoder_path}")
+        if fast_lm_path:
+            self.fast_lm.load_state_dict(
+                torch.load(fast_lm_path, map_location=device, weights_only=True)
+            )
+            print(f"  Loaded fast_lm: {fast_lm_path}")
+        if action_head_path:
+            self.diffusion_head.load_state_dict(
+                torch.load(action_head_path, map_location=device, weights_only=True)
+            )
+            print(f"  Loaded fast diffusion_head: {action_head_path}")
+
+        self.feature_encoder.eval()
+        self.fast_lm.eval()
+        self.diffusion_head.eval()
+        self._step_debug = 0
+
+    def predict(self, text_prompt, features_dict, images=None):
+        agent_features = torch.tensor(
+            features_dict["agents"], dtype=torch.float32, device=self.device,
+        ).unsqueeze(0)
+
+        with torch.no_grad():
+            agent_embeds = self.feature_encoder(agent_features)
+            hidden = self.fast_lm(agent_embeds)
+            num_agents = features_dict.get("num_agents", 0)
+            hidden = hidden[:, :num_agents, :]
+
+            heading_cos = agent_features[0, :num_agents, 2:3]
+            heading_sin = agent_features[0, :num_agents, 3:4]
+            goal_global = agent_features[0, :num_agents, 12:14]
+            goal_local_x = goal_global[:, 0:1] * heading_cos + goal_global[:, 1:2] * heading_sin
+            goal_local_y = -goal_global[:, 0:1] * heading_sin + goal_global[:, 1:2] * heading_cos
+            goal_feat = torch.cat([goal_local_x, goal_local_y], dim=-1)
+
+            waypoints_tensor = ddim_sample(
+                self.diffusion_head, hidden,
+                ddim_steps=self.diffusion_steps,
+                eta=0.0,
+                goal_features=goal_feat.unsqueeze(0),
+            )
+
+            positions = [
+                (agent_features[0, i, 0].item(), agent_features[0, i, 1].item())
+                for i in range(num_agents)
+            ]
+            headings = [
+                math.atan2(agent_features[0, i, 3].item(), agent_features[0, i, 2].item())
+                for i in range(num_agents)
+            ]
+
+            result = {}
+            for i in range(num_agents):
+                px, py = positions[i]
+                heading = headings[i]
+                wps = []
+                for j in range(self.chunk_size):
+                    local_dx = waypoints_tensor[0, i, j * 2].item()
+                    local_dy = waypoints_tensor[0, i, j * 2 + 1].item()
+                    gx = px + local_dx * math.cos(heading) - local_dy * math.sin(heading)
+                    gy = py + local_dx * math.sin(heading) + local_dy * math.cos(heading)
+                    wps.append((round(gx, 4), round(gy, 4)))
+                result[str(i)] = wps
+            return result
 
 
 class AgentFeatureEncoder(nn.Module):

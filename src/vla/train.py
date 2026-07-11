@@ -26,7 +26,7 @@ import numpy as np
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from vla.model_loader import AgentFeatureEncoder
+from vla.model_loader import AgentFeatureEncoder, FastProjector
 from vla.diffusion_head import DiffusionActionHead, compute_diffusion_loss
 
 
@@ -239,6 +239,22 @@ def train(args):
         llm = DummyLM()
         llm.to(device)
         tokenizer = AutoTokenizer.from_pretrained(args.model) if not args.mock else None
+        fast_lm = None
+        img_preprocess = None
+    elif args.fast:
+        print("FAST mode: encoder + lightweight MLP + diffusion head (no LLM)")
+        hidden_dim = 512
+
+        vision_encoder = None
+        projector = None
+        tokenizer = None
+        img_preprocess = None
+
+        fast_lm = FastProjector(hidden_dim).to(device=device, dtype=dtype)
+        fast_lm_params = sum(p.numel() for p in fast_lm.parameters()) / 1e3
+        print(f"  FastProjector: {fast_lm_params:.0f}K params")
+
+        llm = None
     else:
         load_kwargs = {
             "trust_remote_code": True,
@@ -321,6 +337,7 @@ def train(args):
         if not hasattr(llm, 'device_map') or llm.device_map is None:
             llm.to(device)
         llm = llm.float()
+        fast_lm = None
 
     # ---- MLP encoder + Diffusion head ----
     encoder = AgentFeatureEncoder(input_dim=59, hidden_dim=512, output_dim=hidden_dim)
@@ -345,7 +362,7 @@ def train(args):
 
     # ---- Image preprocessing ----
     img_preprocess = None
-    if not args.mock:
+    if not args.mock and not args.fast:
         import torchvision.transforms as T
         from PIL import Image as PILImage
         img_preprocess = T.Compose([
@@ -355,15 +372,22 @@ def train(args):
         ])
 
     # ---- Parameter summary ----
-    llm_params = sum(p.numel() for p in llm.parameters()) / 1e9
-    trainable_llm = sum(p.numel() for p in llm.parameters() if p.requires_grad) / 1e6
-    enc_params = sum(p.numel() for p in encoder.parameters()) / 1e3
-    head_params = sum(p.numel() for p in diffusion_head.parameters()) / 1e3
-    if is_main:
-        print(f"LLM: {llm_params:.1f}B total | {trainable_llm:.1f}M trainable (LoRA)")
-        print(f"Encoder: {enc_params:.0f}K | DiffusionHead: {head_params:.0f}K")
-
-    # ---- DDP (DistributedDataParallel) ----
+    if args.fast:
+        fast_params = sum(p.numel() for p in fast_lm.parameters()) / 1e3
+        enc_params = sum(p.numel() for p in encoder.parameters()) / 1e3
+        head_params = sum(p.numel() for p in diffusion_head.parameters()) / 1e3
+        if is_main:
+            print(f"FastProjector: {fast_params:.0f}K | Encoder: {enc_params:.0f}K | "
+                  f"DiffusionHead: {head_params:.0f}K")
+            print(f"Total trainable: {(fast_params + enc_params + head_params) / 1e3:.1f}M")
+    elif not args.mock:
+        llm_params = sum(p.numel() for p in llm.parameters()) / 1e9
+        trainable_llm = sum(p.numel() for p in llm.parameters() if p.requires_grad) / 1e6
+        enc_params = sum(p.numel() for p in encoder.parameters()) / 1e3
+        head_params = sum(p.numel() for p in diffusion_head.parameters()) / 1e3
+        if is_main:
+            print(f"LLM: {llm_params:.1f}B total | {trainable_llm:.1f}M trainable (LoRA)")
+            print(f"Encoder: {enc_params:.0f}K | DiffusionHead: {head_params:.0f}K")
     if world_size > 1:
         encoder = torch.nn.parallel.DistributedDataParallel(encoder, device_ids=[local_rank])
         diffusion_head = torch.nn.parallel.DistributedDataParallel(diffusion_head, device_ids=[local_rank])
@@ -374,7 +398,9 @@ def train(args):
 
     # ---- Optimizer ----
     params = list(encoder.parameters()) + list(diffusion_head.parameters())
-    if args.use_lora:
+    if args.fast:
+        params += list(fast_lm.parameters())
+    elif args.use_lora:
         params += [p for p in llm.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(params, lr=args.lr, weight_decay=args.weight_decay)
     from transformers import get_scheduler
@@ -391,7 +417,10 @@ def train(args):
     for epoch in range(args.epochs):
         if sampler is not None:
             sampler.set_epoch(epoch)
-        llm.train() if args.use_lora else None
+        if not args.fast:
+            llm.train() if args.use_lora else None
+        else:
+            fast_lm.train()
         encoder.train()
         diffusion_head.train()
         total_loss = 0
@@ -403,48 +432,51 @@ def train(args):
             agent_feat = agent_feat.to(device=device, dtype=dtype)
             target_tensor = target_tensor.to(device=device, dtype=dtype)
 
-            with torch.no_grad():
-                if img_preprocess is not None and any(img is not None for img in images):
-                    from PIL import Image as PILImage
-                    pixel_values = []
-                    for img in images:
-                        if img is not None:
-                            pil_img = PILImage.fromarray(img)
-                        else:
-                            pil_img = PILImage.new("RGB", (224, 224), (30, 30, 30))
-                        pixel_values.append(img_preprocess(pil_img))
-                    pixel_values = torch.stack(pixel_values).to(device=device, dtype=dtype)
-                    pixel_values = torch.cat([pixel_values, pixel_values], dim=1)
-
-                    visual_feat = vision_encoder(pixel_values)
-                    if isinstance(visual_feat, tuple):
-                        visual_feat = visual_feat[0]
-                    if len(visual_feat.shape) == 4:
-                        b, c, h, w = visual_feat.shape
-                        visual_feat = visual_feat.reshape(b, c, -1).permute(0, 2, 1)
-                    visual_tokens = projector(visual_feat)
-                else:
-                    n_patches = 256 if not args.mock else 16
-                    visual_tokens = torch.zeros(B, n_patches, hidden_dim, device=device, dtype=dtype)
-
-            agent_embeds = encoder(agent_feat)
-
-            if tokenizer is not None:
-                encoded = tokenizer(
-                    text_prompts, return_tensors="pt", padding=True,
-                    truncation=True, max_length=1024,
-                ).to(device)
-                text_embeds = llm.get_input_embeddings()(encoded["input_ids"])
-                combined = torch.cat([visual_tokens, agent_embeds, text_embeds], dim=1)
-                n_vis_tokens = visual_tokens.shape[1]
+            if args.fast:
+                hidden = fast_lm(encoder(agent_feat))
             else:
-                combined = torch.cat([visual_tokens, agent_embeds], dim=1)
-                n_vis_tokens = visual_tokens.shape[1]
+                with torch.no_grad():
+                    if img_preprocess is not None and any(img is not None for img in images):
+                        from PIL import Image as PILImage
+                        pixel_values = []
+                        for img in images:
+                            if img is not None:
+                                pil_img = PILImage.fromarray(img)
+                            else:
+                                pil_img = PILImage.new("RGB", (224, 224), (30, 30, 30))
+                            pixel_values.append(img_preprocess(pil_img))
+                        pixel_values = torch.stack(pixel_values).to(device=device, dtype=dtype)
+                        pixel_values = torch.cat([pixel_values, pixel_values], dim=1)
 
-            outputs = llm(inputs_embeds=combined, output_hidden_states=True)
+                        visual_feat = vision_encoder(pixel_values)
+                        if isinstance(visual_feat, tuple):
+                            visual_feat = visual_feat[0]
+                        if len(visual_feat.shape) == 4:
+                            b, c, h, w = visual_feat.shape
+                            visual_feat = visual_feat.reshape(b, c, -1).permute(0, 2, 1)
+                        visual_tokens = projector(visual_feat)
+                    else:
+                        n_patches = 256 if not args.mock else 16
+                        visual_tokens = torch.zeros(B, n_patches, hidden_dim, device=device, dtype=dtype)
 
-            n_agent = agent_embeds.shape[1]
-            hidden = outputs.hidden_states[-1][:, n_vis_tokens:n_vis_tokens + n_agent, :]
+                agent_embeds = encoder(agent_feat)
+
+                if tokenizer is not None:
+                    encoded = tokenizer(
+                        text_prompts, return_tensors="pt", padding=True,
+                        truncation=True, max_length=1024,
+                    ).to(device)
+                    text_embeds = llm.get_input_embeddings()(encoded["input_ids"])
+                    combined = torch.cat([visual_tokens, agent_embeds, text_embeds], dim=1)
+                    n_vis_tokens = visual_tokens.shape[1]
+                else:
+                    combined = torch.cat([visual_tokens, agent_embeds], dim=1)
+                    n_vis_tokens = visual_tokens.shape[1]
+
+                outputs = llm(inputs_embeds=combined, output_hidden_states=True)
+
+                n_agent = agent_embeds.shape[1]
+                hidden = outputs.hidden_states[-1][:, n_vis_tokens:n_vis_tokens + n_agent, :]
 
             n_active = target_tensor.shape[1]
             hidden = hidden[:, :n_active, :]
@@ -478,7 +510,9 @@ def train(args):
             optimizer.zero_grad()
             loss.backward()
             grad_params = list(encoder.parameters()) + list(diffusion_head.parameters())
-            if args.use_lora:
+            if args.fast:
+                grad_params += list(fast_lm.parameters())
+            elif args.use_lora:
                 grad_params += [p for p in llm.parameters() if p.requires_grad]
             torch.nn.utils.clip_grad_norm_(grad_params, args.max_grad_norm)
             optimizer.step()
@@ -502,6 +536,9 @@ def train(args):
         head_sd = diffusion_head.module.state_dict() if world_size > 1 else diffusion_head.state_dict()
         torch.save(enc_sd, os.path.join(args.save_dir, "encoder.pt"))
         torch.save(head_sd, os.path.join(args.save_dir, "diffusion_head.pt"))
+        if args.fast:
+            lm_sd = fast_lm.state_dict()
+            torch.save(lm_sd, os.path.join(args.save_dir, "fast_lm.pt"))
         if args.use_lora:
             llm_mod = llm.module if world_size > 1 else llm
             llm_mod.save_pretrained(os.path.join(args.save_dir, "lora_adapter"))
@@ -562,6 +599,8 @@ if __name__ == "__main__":
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
     parser.add_argument("--mock", action="store_true",
                         help="Mock mode: dummy components for local training loop verification")
+    parser.add_argument("--fast", action="store_true",
+                        help="Fast mode: encoder + lightweight MLP + diffusion head (no LLM, trains in minutes)")
     args = parser.parse_args()
 
     if args.data:
