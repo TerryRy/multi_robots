@@ -167,7 +167,7 @@ class OpenVLAPolicy:
 
     def __init__(self, model_id="openvla/openvla-7b", device="cpu",
                  action_mode="continuous", use_mock=False,
-                 chunk_size=8, diffusion_steps=100, max_agents=14):
+                 chunk_size=8, diffusion_steps=200, max_agents=14):
         self.model_id = model_id
         self.device = device
         self.action_mode = action_mode
