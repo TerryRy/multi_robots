@@ -333,6 +333,13 @@ def train(args):
             )
             llm = get_peft_model(llm, lora_config)
             llm.enable_input_require_grads()
+            if hasattr(llm, 'base_model'):
+                llm.base_model.gradient_checkpointing_enable()
+            else:
+                try:
+                    llm.gradient_checkpointing_enable()
+                except Exception:
+                    pass
         else:
             llm.eval()
             for p in llm.parameters():
@@ -383,6 +390,13 @@ def train(args):
             if 'lora' in n:
                 p.requires_grad = True
         llm.enable_input_require_grads()
+        if hasattr(llm, 'base_model'):
+            llm.base_model.gradient_checkpointing_enable()
+        else:
+            try:
+                llm.gradient_checkpointing_enable()
+            except Exception:
+                pass
         print(f"Loaded LoRA: {path}")
 
     # ---- Image preprocessing ----
