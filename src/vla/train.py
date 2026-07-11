@@ -262,12 +262,10 @@ def train(args):
         }
         if args.quantize and device.type == "cuda":
             from transformers import BitsAndBytesConfig
-            load_kwargs["device_map"] = "auto"
             load_kwargs["quantization_config"] = BitsAndBytesConfig(
                 load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_compute_dtype=torch.float32,
             )
-            load_kwargs["torch_dtype"] = torch.float16
         else:
             load_kwargs["torch_dtype"] = dtype
             if device.type == "cuda":
@@ -338,22 +336,20 @@ def train(args):
                 p.requires_grad = False
 
         hidden_dim = llm.config.hidden_size
-        llm_dtype = next(llm.parameters()).dtype
         if not args.quantize:
             if not hasattr(llm, 'device_map') or llm.device_map is None:
                 llm.to(device)
             llm = llm.float()
-            llm_dtype = torch.float32
         fast_lm = None
 
     # ---- MLP encoder + Diffusion head ----
     encoder = AgentFeatureEncoder(input_dim=59, hidden_dim=512, output_dim=hidden_dim)
-    encoder = encoder.to(device=device, dtype=llm_dtype)
+    encoder = encoder.to(device=device, dtype=dtype)
 
     diffusion_head = DiffusionActionHead(
         hidden_dim=hidden_dim, chunk_size=args.chunk_size,
     )
-    diffusion_head = diffusion_head.to(device=device, dtype=torch.float32)
+    diffusion_head = diffusion_head.to(device=device, dtype=dtype)
 
     # ---- Load checkpoints (incremental training) ----
     if args.load_encoder:
@@ -436,8 +432,8 @@ def train(args):
             agent_feat, text_prompts, target_tensor, images = batch
 
             B = agent_feat.shape[0]
-            agent_feat = agent_feat.to(device=device, dtype=llm_dtype if args.quantize else dtype)
-            target_tensor = target_tensor.to(device=device, dtype=torch.float32)
+            agent_feat = agent_feat.to(device=device, dtype=dtype)
+            target_tensor = target_tensor.to(device=device, dtype=dtype)
 
             if args.fast:
                 hidden = fast_lm(encoder(agent_feat))
@@ -486,7 +482,7 @@ def train(args):
                 hidden = outputs.hidden_states[-1][:, n_vis_tokens:n_vis_tokens + n_agent, :]
 
             n_active = target_tensor.shape[1]
-            hidden = hidden[:, :n_active, :].float()
+            hidden = hidden[:, :n_active, :]
 
             target_flat = target_tensor.reshape(B, n_active, -1)
             pos = agent_feat[:, :n_active, :2]
