@@ -52,10 +52,13 @@ class VLADataset(Dataset):
             if not os.path.isdir(abs_dir):
                 abs_dir = os.path.join(script_dir, "..", data_root, dir_path)
             if not os.path.isdir(abs_dir):
+                abs_dir = os.path.join(script_dir, "..", "..", dir_path)
+            if not os.path.isdir(abs_dir):
                 raise FileNotFoundError(
                     f"Data directory not found: tried '{dir_path}', "
                     f"'{os.path.join(data_root, dir_path)}', "
-                    f"and relative to script dir '{script_dir}/..'")
+                    f"and relative to script dir '{script_dir}/..' "
+                    f"and '{script_dir}/../..'")
 
             for fname in sorted(os.listdir(abs_dir)):
                 if not fname.endswith(".jsonl"):
