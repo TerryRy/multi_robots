@@ -60,11 +60,11 @@ BASE_ARGS="--model ${MODEL} --use-lora --lora-rank 128 --epochs ${EPOCHS} --batc
 
 case $STAGE in
   quick)
-    echo "========== Quick mode: minimal OpenVLA-7B + LoRA (pipeline smoke test) =========="
+    echo "========== Quick mode: minimal OpenVLA-7B + LoRA (pipeline + effect smoke test) =========="
     python vla/train.py \
         --model ${MODEL} --use-lora --lora-rank 128 --quantize \
         --data "${DATA_DIR}/stage_1" \
-        --epochs 2 --batch-size 1 --max-samples 200 --lr ${LR} \
+        --epochs 5 --batch-size 1 --max-samples 200 --lr ${LR} \
         --save-dir "${WEIGHT_DIR}/stage_quick" \
         ${EXTRA_ARGS}
     ;;
