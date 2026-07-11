@@ -107,7 +107,7 @@ class VLADataset(Dataset):
 
     @property
     def feature_dim(self):
-        return self._feature_dim if self._feature_dim > 0 else 55
+        return self._feature_dim if self._feature_dim > 0 else 59
 
     def _filter_waypoint_direction(self):
         if len(self.samples) < 20:

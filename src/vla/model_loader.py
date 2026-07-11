@@ -24,7 +24,7 @@ class MockVLAPolicy:
             sx, sy = dx / 8.0, dy / 8.0
             wps, cx, cy = [], px, py
             for _ in range(8):
-                cx, cy = cx + sx, cx + sy
+                cx, cy = cx + sx, cy + sy
                 wps.append((round(cx, 4), round(cy, 4)))
             waypoints[str(i)] = wps
         return waypoints
@@ -303,7 +303,7 @@ class OpenVLAPolicy:
         Args:
             images: PIL Image, numpy array, or list thereof [B, H, W, 3]
             text_prompt: str or list of str
-            agent_features: [B, N, 55] tensor
+            agent_features: [B, N, 59] tensor
         Returns:
             hidden_states: [B, N, hidden_dim] for agent tokens
         """
