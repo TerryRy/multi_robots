@@ -18,7 +18,7 @@
 STAGE=${1:?"Usage: $0 <stage> [sim_minutes]; stage=1|2|3|4"}
 SIM_TIME=${2:-""}
 
-GP="MARRTStar"
+GP="LayeredAStar"
 LP="HRVOPlanner"
 STRIDE=4
 
