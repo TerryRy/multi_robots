@@ -481,29 +481,8 @@ def train(args):
             if args.fast:
                 hidden = fast_lm(encoder(agent_feat))
             else:
-                with torch.no_grad():
-                    if img_preprocess is not None and any(img is not None for img in images):
-                        from PIL import Image as PILImage
-                        pixel_values = []
-                        for img in images:
-                            if img is not None:
-                                pil_img = PILImage.fromarray(img)
-                            else:
-                                pil_img = PILImage.new("RGB", (224, 224), (30, 30, 30))
-                            pixel_values.append(img_preprocess(pil_img))
-                        pixel_values = torch.stack(pixel_values).to(device=device, dtype=dtype)
-                        pixel_values = torch.cat([pixel_values, pixel_values], dim=1)
-
-                        visual_feat = vision_encoder(pixel_values)
-                        if isinstance(visual_feat, tuple):
-                            visual_feat = visual_feat[0]
-                        if len(visual_feat.shape) == 4:
-                            b, c, h, w = visual_feat.shape
-                            visual_feat = visual_feat.reshape(b, c, -1).permute(0, 2, 1)
-                        visual_tokens = projector(visual_feat)
-                    else:
-                        n_patches = 256 if not args.mock else 16
-                        visual_tokens = torch.zeros(B, n_patches, hidden_dim, device=device, dtype=dtype)
+                n_patches = 0
+                visual_tokens = torch.zeros(B, n_patches, hidden_dim, device=device, dtype=dtype)
 
                 agent_embeds = encoder(agent_feat)
 
