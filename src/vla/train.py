@@ -563,7 +563,11 @@ def train(args):
                 safety = obs_safe * lidar_safe * port_safe
 
                 dir_weighted = (dir_loss * safety).mean()
-                loss = loss + 0.1 * dir_weighted
+                loss = loss + 0.3 * dir_weighted
+
+                mag = wp_norm.squeeze(-1)
+                mag_penalty = torch.relu(0.05 - mag).mean()
+                loss = loss + 0.1 * mag_penalty
 
             nearest_obs = agent_feat[:, :n_active, 52]
             goal_angle = torch.atan2(goal_feat[:, :, 1], goal_feat[:, :, 0])
