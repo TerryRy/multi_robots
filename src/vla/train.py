@@ -279,6 +279,13 @@ def train(args):
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
 
+        try:
+            import flash_attn
+            load_kwargs["attn_implementation"] = "flash_attention_2"
+            print("  Flash Attention 2 enabled")
+        except ImportError:
+            pass
+
         print(f"Loading OpenVLA model: {args.model}")
         full_model = AutoModelForVision2Seq.from_pretrained(args.model, **load_kwargs)
 

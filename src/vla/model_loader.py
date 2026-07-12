@@ -189,13 +189,19 @@ class OpenVLAPolicy:
 
         print(f"Loading OpenVLA-7B from {self.model_id}...")
 
-        full_model = AutoModelForVision2Seq.from_pretrained(
-            self.model_id,
-            trust_remote_code=True,
-            torch_dtype=torch.float16 if self.device != "cpu" else torch.float32,
-            device_map=self.device if self.device != "cpu" else None,
-            low_cpu_mem_usage=True,
-        )
+        load_kwargs = {
+            "trust_remote_code": True,
+            "torch_dtype": torch.float16 if self.device != "cpu" else torch.float32,
+            "device_map": self.device if self.device != "cpu" else None,
+            "low_cpu_mem_usage": True,
+        }
+        try:
+            import flash_attn
+            load_kwargs["attn_implementation"] = "flash_attention_2"
+        except ImportError:
+            pass
+
+        full_model = AutoModelForVision2Seq.from_pretrained(self.model_id, **load_kwargs)
 
         for attr in ['vision_encoder', 'vision_tower', 'vision_backbone']:
             if hasattr(full_model, attr):
