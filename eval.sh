@@ -25,14 +25,22 @@
 #   sbatch eval.sh quick                 # 快速管线验证 (2min)
 # =============================================
 
-STAGE=${1:?"Usage: $0 <stage> [sim_minutes]; stage=1|2|3|4|quick"}
-if [ "$STAGE" = "quick" ]; then
-    SIM_MINUTES=${2:-2}
+STAGE=${1:?"Usage: $0 <stage> [sim_minutes] [extra_args]; stage=1|2|3|4|quick"}
+
+SIM_MINUTES=""
+if [ -n "$2" ] && [[ "$2" =~ ^[0-9]+$ ]]; then
+    SIM_MINUTES="$2"
+    shift 2
 else
-    SIM_MINUTES=${2:-5}
+    shift 1
 fi
-shift 2 2>/dev/null || shift 1
-EXTRA_ARGS="$@"
+EXTRA_ARGS="${@}"
+
+if [ "$STAGE" = "quick" ]; then
+    SIM_MINUTES=${SIM_MINUTES:-2}
+else
+    SIM_MINUTES=${SIM_MINUTES:-5}
+fi
 
 # ==================== 路径 ====================
 VENV_DIR=$HOME/ip/venv
