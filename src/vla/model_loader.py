@@ -304,10 +304,9 @@ class OpenVLAPolicy:
         visual_tokens = self.projector(visual_feat)
         return visual_tokens
 
-    def forward(self, images, text_prompt, agent_features):
+    def forward(self, text_prompt, agent_features):
         """
         Args:
-            images: PIL Image, numpy array, or list thereof [B, H, W, 3]
             text_prompt: str or list of str
             agent_features: [B, N, 59] tensor
         Returns:
@@ -315,7 +314,8 @@ class OpenVLAPolicy:
         """
         B = agent_features.shape[0]
 
-        visual_tokens = self._encode_images(images)
+        n_vis = 0
+        visual_tokens = torch.zeros(B, n_vis, self.llm.config.hidden_size, device=self.device, dtype=self.llm.dtype)
 
         agent_embeds = self.feature_encoder(agent_features)
 
@@ -336,7 +336,7 @@ class OpenVLAPolicy:
         )
 
         n_agent = agent_embeds.shape[1]
-        hidden = outputs.hidden_states[-1][:, visual_tokens.shape[1]:visual_tokens.shape[1] + n_agent, :]
+        hidden = outputs.hidden_states[-1][:, :n_agent, :]
         return hidden
 
     def load_checkpoint(self, checkpoint_dir):
@@ -373,7 +373,7 @@ class OpenVLAPolicy:
         ).unsqueeze(0)
 
         with torch.no_grad():
-            hidden = self.forward(images, text_prompt, agent_features)
+            hidden = self.forward(text_prompt, agent_features)
             num_agents = features_dict.get("num_agents", 0)
             hidden = hidden[:, :num_agents, :]
 

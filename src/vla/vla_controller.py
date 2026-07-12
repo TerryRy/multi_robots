@@ -138,8 +138,7 @@ class VLAController:
 
         if needs_inference and self._model is not None:
             text_prompt, features, agents_data = self.serializer.serialize(simulator)
-            img = self.renderer.render(simulator)
-            vla_output = self._model.predict(text_prompt, features, images=img)
+            vla_output = self._model.predict(text_prompt, features)
             self._dispatch_waypoints(vla_output, agents_data, simulator)
 
             if self._step_counter <= 5 or self._step_counter % 60 == 0:
@@ -179,8 +178,7 @@ class VLAController:
 
     def _run_policy_control(self, simulator):
         text_prompt, features, agents_data = self.serializer.serialize(simulator)
-        img = self.renderer.render(simulator)
-        vla_output = self._model.predict(text_prompt, features, images=img)
+        vla_output = self._model.predict(text_prompt, features)
         self._dispatch_waypoints(vla_output, agents_data, simulator)
 
     def _run_random_control(self, simulator):
