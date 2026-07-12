@@ -15,18 +15,21 @@
 # 不需要 HF Token (读取本地 ~/ip/models/openvla-7b)
 #
 #   sbatch train.sh <stage> [extra_args...]
-#     stage: 1 | 2 | 3 | 4 | quick
-#     quick: 最小规模 OpenVLA-7B 训练, 验证管线不崩溃
-#            (2 epochs × 200 samples, --quantize, ~10min)
+#     stage: 1 | 2 | 3 | 4 | quick | fresh
+#     quick:  最小规模 OpenVLA-7B 训练, 验证管线不崩溃
+#     fresh:  从头训练, 不加载旧 checkpoint, 不混旧数据
+#             (默认 4 epochs, 默认 data/trajectories/stage_3)
 #
 # 示例:
 #   sbatch train.sh 1                        # Stage 1: 从头训练
 #   sbatch train.sh 2                        # Stage 2: 加载 stage_1
 #   sbatch train.sh 3 --epochs 30 --lr 5e-5  # 自定义参数
 #   sbatch train.sh quick                    # 快速管线验证
+#   sbatch train.sh fresh                    # 纯 Stage 3 数据从头训 4 轮
+#   sbatch train.sh fresh --data data/trajectories/stage_4 --epochs 6
 # =============================================
 
-STAGE=${1:?"Usage: $0 <stage> [extra_args]; stage=1|2|3|4|quick"}
+STAGE=${1:?"Usage: $0 <stage> [extra_args]; stage=1|2|3|4|quick|fresh"}
 shift  # 移除 stage, 剩余参数传递给 train.py
 EXTRA_ARGS="$@"
 
@@ -59,6 +62,15 @@ LR=3e-5
 BASE_ARGS="--model ${MODEL} --use-lora --lora-rank 128 --epochs ${EPOCHS} --batch-size ${BATCH} --lr ${LR}"
 
 case $STAGE in
+  fresh)
+    echo "========== Fresh: train from scratch, no old checkpoint, no data mix =========="
+    python vla/train.py \
+        --model ${MODEL} --use-lora --lora-rank 128 \
+        --data "${DATA_DIR}/stage_3" \
+        --epochs 4 --batch-size ${BATCH} --lr ${LR} \
+        --save-dir "${WEIGHT_DIR}/stage_fresh" \
+        ${EXTRA_ARGS}
+    ;;
   quick)
     echo "========== Quick mode: minimal OpenVLA-7B + LoRA (pipeline + effect smoke test) =========="
     python vla/train.py \
@@ -110,7 +122,7 @@ case $STAGE in
         ${EXTRA_ARGS}
     ;;
   *)
-    echo "Error: stage must be 1, 2, 3, 4, or quick (got: $STAGE)"
+    echo "Error: stage must be 1, 2, 3, 4, quick, or fresh (got: $STAGE)"
     exit 1
     ;;
 esac
