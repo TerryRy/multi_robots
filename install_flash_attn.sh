@@ -25,7 +25,20 @@ for nvcc_cand in $(which -a nvcc 2>/dev/null) /usr/local/cuda*/bin/nvcc /opt/cud
 done
 
 if [ -z "$CUDA_HOME" ]; then
-    echo "ERROR: no valid nvcc found. Try: conda install -c nvidia cuda-nvcc"
+    echo "nvcc not found, installing cuda-nvcc via conda..."
+    conda install -c nvidia cuda-nvcc -y 2>&1 | tail -5
+
+    # re-scan for nvcc
+    for nvcc_cand in $(which -a nvcc 2>/dev/null); do
+        if [ -x "$nvcc_cand" ] && "$nvcc_cand" --version 2>/dev/null | grep -q release; then
+            CUDA_HOME=$(dirname $(dirname "$nvcc_cand"))
+            break
+        fi
+    done
+fi
+
+if [ -z "$CUDA_HOME" ]; then
+    echo "ERROR: still no valid nvcc. flash-attn cannot be installed."
     exit 1
 fi
 
