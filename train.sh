@@ -63,7 +63,7 @@ BASE_ARGS="--model ${MODEL} --use-lora --lora-rank 128 --epochs ${EPOCHS} --batc
 
 case $STAGE in
   fresh)
-    echo "========== Fresh: train from scratch, no old checkpoint, no data mix =========="
+    echo "========== Fresh mode: train on stage_3 data from scratch (no old checkpoint, no data mix) =========="
     rm -rf "${WEIGHT_DIR}/stage_fresh"
     python vla/train.py \
         --model ${MODEL} --use-lora --lora-rank 128 \
