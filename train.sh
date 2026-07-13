@@ -67,7 +67,7 @@ case $STAGE in
     python vla/train.py \
         --model ${MODEL} --use-lora --lora-rank 128 \
         --data "${DATA_DIR}/stage_3" \
-        --epochs 4 --batch-size ${BATCH} --lr ${LR} \
+        --epochs 12 --batch-size ${BATCH} --lr ${LR} \
         --save-dir "${WEIGHT_DIR}/stage_fresh" \
         ${EXTRA_ARGS}
     ;;

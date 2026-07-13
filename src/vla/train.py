@@ -555,6 +555,10 @@ def train(args):
                 mag_penalty = torch.relu(0.05 - mag).mean()
                 loss = loss + 0.1 * mag_penalty
 
+                wp_diffs = pred_local[:, :, 1:, :] - pred_local[:, :, :-1, :]
+                smooth_penalty = (wp_diffs ** 2).mean()
+                loss = loss + 0.05 * smooth_penalty
+
             nearest_obs = agent_feat[:, :n_active, 52]
             goal_angle = torch.atan2(goal_feat[:, :, 1], goal_feat[:, :, 0])
             lidar_bin = ((goal_angle + 1.57079633) / 3.14159265 * 16).long().clamp(0, 15)
