@@ -1,521 +1,347 @@
 # VLA 模块设计文档
 
-## 目录
-
-1. [架构总览](#1-架构总览)
-2. [模型架构](#2-模型架构)
-3. [输入特征规范 (59 维)](#3-输入特征规范-59-维)
-4. [数据采集](#4-数据采集)
-5. [训练流程](#5-训练流程)
-6. [损失函数](#6-损失函数)
-7. [推理流程](#7-推理流程)
-8. [Checkpoint 管理](#8-checkpoint-管理)
-9. [状态机集成](#9-状态机集成)
-10. [CLI / 接口](#10-cli--接口)
-11. [已知问题与设计决策](#11-已知问题与设计决策)
+> 多机器人调度模拟器的 Vision-Language-Action 接口层  
+> 基于 OpenVLA-7B (Llama2-7B + LoRA) + DDPM Diffusion Action Head
 
 ---
 
 ## 1. 架构总览
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     simulator.py step()                          │
-│                                                                  │
-│  1. 512-ray LiDAR 射线 → agent.observe()                        │
-│                                                                  │
-│  2. State Machine                                                │
-│     agent.state_machine.next_state() → CRUISE/QUEUING/LOADING…   │
-│                                                                  │
-│  3. VLAController.step()                                         │
-│     ├── StateSerializer.serialize(simulator)                     │
-│     │     ├── agents: 59-dim per agent                           │
-│     │     ├── ports: 位置 + 队列 + items                        │
-│     │     ├── obstacles: 位置 + 尺寸                            │
-│     │     ├── text_prompt  (自然语言摘要)                        │
-│     │     └── features_dict (数值特征)                           │
-│     │                                                            │
-│     ├── SimulatorRenderer.render() → 224×224 RGB (可选)         │
-│     │                                                            │
-│     ├── OpenVLAPolicy.predict()                                  │
-│     │     └── features → MLP Encoder → Llama2-7B(LoRA)          │
-│     │         → DiffusionActionHead (DDIM)                       │
-│     │         → 8 local waypoints → 8 global waypoints          │
-│     │                                                            │
-│     └── WaypointTracker × N agents                               │
-│           └── 8 global waypoints → 线性插值 → (vx, vy) 每步    │
-│                                                                  │
-│  4. Box2D 物理步进 (speed)                                       │
-└─────────────────────────────────────────────────────────────────┘
+59 维特征 × N agents → MLP Encoder → Llama2-7B (LoRA) → DiffusionActionHead → 8 waypoints × N agents
+文本 prompt → Tokenizer ──────────────────────────────────────────────┘
+视觉 token ─ 训练时已移除 (n_patches=0), 推理时同样跳过
 ```
 
-**设计原则**：VLA 负责高层 waypoint 规划，WaypointTracker 是纯算法执行器，不做第二层 AI。避免误差累积。
+每个 agent 输出 8 个 waypoint（约 0.13 秒路径），WaypointTracker 做线性插值转为 (vx, vy) 速度指令。
 
 ---
 
-## 2. 模型架构
+## 2. 模型组件
 
-### 2.1 组件总览
-
-```
-Image (224×224)   59-dim features × 12 agents       Text Prompt
-     │                     │                             │
-     ▼                     ▼                             ▼
-  SigLIP*             AgentFeatureEncoder           Tokenizer*
-  (frozen)            (trainable, ~2.4M)           (frozen)
-     │                     │                             │
-     ▼                     ▼                             ▼
-  Projector*           agent_embeds                text_embeds
-  (frozen)          [1, N, 4096]              [1, T, 4096]
-     │                     │                             │
-     └─────────────────────┼─────────────────────────────┘
-                           │ concat
-                           ▼
-                   ┌───────────────┐
-                   │  Llama2-7B    │  ← frozen base + LoRA (rank=128, q_proj, v_proj, ~40M)
-                   │  (LoRA)       │
-                   └───────────────┘
-                           │
-                           ▼ agent-position hidden states
-                     [1, N, 4096]
-                           │
-                           ▼
-                   ┌──────────────────┐
-                   │ DiffusionActionHead│  ← trainable, ~14M
-                   │ (DDPM + cross-attn)│
-                   └──────────────────┘
-                           │
-                           ▼
-                   local-frame waypoints
-                   {(Δx₁,Δy₁)…(Δx₈,Δy₈)} × N agents
-                           │
-                           ▼ cos/sin 旋转
-                   global-frame waypoints
-```
-
-\* SigLIP + Projector + Tokenizer 在训练和推理中都加载但不更新权重。
-
-### 2.2 AgentFeatureEncoder
+### 2.1 AgentFeatureEncoder
 
 ```
-入口: 59-dim → 出口: 4096-dim (匹配 Llama2-7B hidden_size)
-
-  Linear(59, 512) → ReLU → Linear(512, 512) → ReLU → Linear(512, 4096) → LayerNorm(4096)
-  ~2.4M params, 全参数训练
+59 → Linear(59,512) → ReLU → Linear(512,512) → ReLU → Linear(512,4096) → LayerNorm(4096)
 ```
+
+~240 万参数，全参数训练。将 59 维结构化特征映射到 Llama2-7B 的 4096 维隐空间。
+
+### 2.2 Llama2-7B (LoRA)
+
+- **冻结**：7B 主体参数
+- **微调**：LoRA rank=128 on `q_proj`, `v_proj`（~6700 万可训练参数）
+- 作用：多 agent cross-attention。N 个 agent 的 token 在 LLM 内部互相 attend，学习「谁先过、谁让行、排队」
+- Gradient checkpointing 开启（省显存 ~40%，慢 ~30%）
 
 ### 2.3 DiffusionActionHead
 
-- 4 个 CrossAttentionBlock（self-attn + cross-attn + FFN）
-- 条件输入：LLM hidden states [B,N,4096] + goal_features [B,N,2]
-- 输出：chunk_size × 2 = 16 维 local-frame waypoint 序列
-- ~14M params，全参数训练
-- 最终输出层：`normal_(mean=0, std=0.001)` 初始化
+```
+输入: hidden(4096) + goal_feat(2) → cat → Linear(4098→512) → 4×CrossAttentionBlock → Linear(512→16)
+```
 
-### 2.4 Llama2-7B (LoRA)
+~1700 万参数，全参数训练。  
+4 个 CrossAttentionBlock（self-attn + cross-attn + FFN），condition 为 LLM hidden + goal 方向。  
+输出 8 对 (Δx, Δy) 局部帧 waypoint。  
+最终输出层用正态初始化（std=0.001），避免零坍缩。
 
-- **冻结**：Llama2-7B 主干（注意力 + FFN + embedding）
-- **微调**：LoRA rank=128 on attention layers (`q_proj`, `v_proj`)，~40M params
-- 作用：multi-agent cross-attention learning。同一 batch 内 N 个 agent 的 token 在 LLM 内部互相 attend，学出协调策略。
+### 2.4 总可训练参数
 
-### 2.5 可训练参数汇总
-
-| 模块 | 参数量 | 状态 |
-|------|--------|------|
-| AgentFeatureEncoder | ~2.4M | 全参数训练 |
-| DiffusionActionHead | ~14M | 全参数训练 |
-| Llama2-7B LoRA (rank=128) | ~40M | LoRA 微调 |
-| SigLIP + Projector + Tokenizer | ~370M + | 冻结 |
-| Llama2-7B (except LoRA) | ~7B | 冻结 |
-| **合计可训练** | **~56M** | |
+| 模块 | 参数量 | 训练方式 |
+|------|--------|----------|
+| AgentFeatureEncoder | ~2.4M | 全参数 |
+| diffusion_head | ~17M | 全参数 |
+| Llama2-7B LoRA (rank=128) | ~67M | LoRA |
+| SigLIP + Projector + Tokenizer | ~370M | 冻结 |
+| **合计** | **~86M** | |
 
 ---
 
-## 3. 输入特征规范 (59 维)
+## 3. 输入特征规范（59 维/agent）
 
-每 agent 一个 59-dim 特征向量，构成 `[batch, N_agents, 59]` 的 tensor。
+| 索引 | 维度 | 字段 | 说明 |
+|------|------|------|------|
+| 0-1 | 2 | position | (x, y) 世界坐标 |
+| 2-3 | 2 | heading | (cosθ, sinθ) |
+| 4 | 1 | speed | 当前速率 (m/s) |
+| 5-10 | 6 | state one-hot | IDLE/LOADING/QUEUING/HALT/CRUISE/PREQUEUE |
+| 11 | 1 | carrying | 是否载货 (0/1) |
+| 12-13 | 2 | goal offset | (dx, dy) 全局坐标 → 训练时转为局部帧 |
+| 14-15 | 2 | goal heading | (cosφ, sinφ) 全局 |
+| 16-35 | 20 | neighbors ×4 | (dist, cos rel_angle, sin rel_angle, cos hd_diff, sin hd_diff) |
+| 36-51 | 16 | LiDAR | 512 ray → 16 bin min 降采样 |
+| 52-54 | 3 | nearest obstacle | (dist, cos angle, sin angle) |
+| 55-58 | 4 | nearest port | (dist, cos angle, sin angle, is_loading) |
 
-### 3.1 特征布局
-
-| 索引 | 维度 | 字段 | 说明 | 数据来源 |
-|------|------|------|------|----------|
-| 0-1 | 2 | position | (x, y) 世界坐标 | Box2D body.position |
-| 2-3 | 2 | heading | (cos θ, sin θ) | Box2D body.angle |
-| 4 | 1 | speed | 当前速率 (m/s) | agent.speed |
-| 5-10 | 6 | state one-hot | IDLE/LOADING/QUEUING/HALT/CRUISE/PREQUEUE | agent.state |
-| 11 | 1 | carrying | 是否载货 (0/1) | agent.carrying_item |
-| 12-13 | 2 | goal offset | (dx_goal, dy_goal) 全局坐标系 | agent.destination_location − position |
-| 14-15 | 2 | goal heading | (cos φ, sin φ) 全局坐标系 | atan2(dy_goal, dx_goal) |
-| 16-35 | 20 | neighbors ×4 | (dist, cos rel_angle, sin rel_angle, cos hd_diff, sin hd_diff) × 4 | sensor 4m 范围内最近 4 agent |
-| 36-51 | 16 | LiDAR bins | 512-ray → 16-bin min downsampling | agent.ray_length_list |
-| 52-54 | 3 | nearest obstacle | (dist, cos obs_angle, sin obs_angle) | ray_length_list 全局 min |
-| 55-58 | 4 | nearest port | (dist, cos rel_angle, sin rel_angle, is_loading) | 环境内所有 port 计算最近 |
-
-### 3.2 关键索引在代码中的使用
-
-| 索引 | `state_serializer.py` (构建) | `train.py` (训练) | `model_loader.py` (推理) |
-|------|------------------------------|-------------------|--------------------------|
-| 0-1 | `pos[0], pos[1]` | `agent_feat[:,:,:2]` | `agent_features[0,i,0:2]` |
-| 2 | `cos(heading_rad)` | `agent_feat[:,:,2:3]` | `agent_features[0,:,2:3]` |
-| 3 | `sin(heading_rad)` | `agent_feat[:,:,3:4]` | `agent_features[0,:,3:4]` |
-| 7 | QUEUING one-hot | `is_mobile` (collision loss) | — |
-| 9 | CRUISE one-hot | `is_mobile` (collision loss) | — |
-| 12-13 | `dx_goal, dy_goal` (global) | `agent_feat[:,:,12:14]` → local frame | `agent_features[0,:,12:14]` → local frame |
-| 36-51 | 16-bin LiDAR | `agent_feat[:,:,36:52]` | — |
-| 52 | nearest obs dist | `agent_feat[:,:,52]` | — |
-
-### 3.3 坐标帧转换
-
-训练和推理中的 goal 坐标帧统一为局部帧：
+**坐标帧一致性**：训练和推理中，goal_feat 和 target waypoint 统一转为局部帧。
 
 ```
-global (dx_goal, dy_goal)  →  旋转矩阵  →  local (dx_local, dy_local)
-
-  local_x =  global_dx * cos(θ) + global_dy * sin(θ)
-  local_y = -global_dx * sin(θ) + global_dy * cos(θ)
+local_x =  dx_global * cos(θ) + dy_global * sin(θ)
+local_y = -dx_global * sin(θ) + dy_global * cos(θ)
 ```
 
-训练目标 waypoint 同样转换为局部帧后喂入 DDPM loss。
-
-推理时 DDIM 输出局部帧 waypoint，再逆旋转回全局帧：
-```
-global_x = px + local_dx * cos(θ) − local_dy * sin(θ)
-global_y = py + local_dx * sin(θ) + local_dy * cos(θ)
-```
+推理时逆旋转：`gx = px + lx*cosθ − ly*sinθ`
 
 ---
 
 ## 4. 数据采集
 
-### 4.1 采集流程
-
-```
-python simulator.py --vla-collect --agent <N> --port <L> <U> -t <minutes>
-```
-
-采集模式 (`VLAController.collect_data=True`) 下：
-- Agent 由手写规划器（默认 SimpleAStar + DullPlanner）控制
-- 每 `chunk_size`（8）步，记录观测状态（text_prompt + features）
-- 等待 `chunk_size × stride` 步后，提取 Agent 实际走过的全局坐标作为 expert waypoint
-- 写入 JSONL 文件 + 可选 PNG 截图
-
-### 4.2 数据格式 (JSONL)
-
-每行一条记录：
+### 4.1 JSONL 格式
 
 ```json
 {
-  "text_prompt": "Timestamp: 120.00s | Packages: 45 | Collisions: AA=0 AO=0\n  Agent_0: pos=...",
-  "features": {
-    "agents": [[3.0, 17.0, ...], ...],
-    "num_agents": 2,
-    "ports": [1.0, 17.0, 1.0, 0.0, 5.0, ...],
-    "obstacles": [...]
-  },
-  "target_action": {
-    "0": [(3.1, 16.8), (3.2, 16.5), ..., (3.9, 14.7)],
-    "1": [(12.8, 7.2), (12.9, 7.0), ..., (13.5, 5.8)]
-  },
+  "text_prompt": "... Agent_0 pos=...",
+  "features": {"agents": [[...]], "num_agents": N, ...},
+  "target_action": {"0": [(x,y)*8], "1": [(x,y)*8]},
   "image_path": "session_xxx/frame_xxx.png",
-  "agent_count": 2
+  "agent_count": N
 }
 ```
 
-- `target_action`: 每个 agent 的 8 个全局坐标 waypoint（agent ID 为 key）
-- 坐标帧：**全局坐标系**（Box2D 世界坐标）
-- `features.agents`: 59-dim per-agent 特征（旧数据为 55-dim，训练时自动 padding 到 59）
+target_action 为专家真实走过的 8 个全局坐标。features 为 59 维（旧 55 维数据自动 padding）。
 
-### 4.3 Hindsight DAgger
+### 4.2 采集命令
 
-`collect_data.sh` Stage 2-4 使用混合控制策略：
+```bash
+# pure expert（默认）
+sbatch collect_data.sh <stage>
 
-| Stage | mix | 含义 |
-|-------|-----|------|
-| 1 | 100% expert | 纯手写规划器 |
-| 2 | 60% expert + 30% policy + 20% random | policy = Stage 1 VLA 模型 |
-| 3 | 40% expert + 40% policy + 20% random | policy = Stage 2 VLA 模型 |
-| 4 | 20% expert + 60% policy + 20% random | policy = Stage 3 VLA 模型 |
+# DAgger（需手动传 --mix）
+sbatch collect_data.sh <stage> "--mix expert:0.4,policy:0.4,random:0.2 --vla-model openvla/openvla-7b --vla-device cuda --vla-checkpoint weights/stage_N"
+```
 
-Expert 和 random 的控制在本地执行，policy 控制需要加载对应阶段的 checkpoint 做推理。
+### 4.3 Stage 参数
 
-### 4.4 stride 参数
+| Stage | Agents | Ports | Map | Time |
+|-------|--------|-------|-----|------|
+| 1 | 2 | 2+2 | 20×12 | 10 min |
+| 2 | 4 | 4+4 | 30×16 | 10 min |
+| 3 | 5 | 5+5 | 40×20 | 12 min |
+| 4 | 7 | 7+7 | 45×20 | 15 min |
 
-默认 stride=1（每 8 步采集 8 个连续 waypoint）。设置为 4 时，每 8×4=32 步采集 8 个 stride=4 的 waypoint（增大时间跨度，降低采样密度）。
+stride=4，VA 采集时记录 expert 轨迹。
+
+### 4.4 碰撞过滤
+
+训练加载数据时自动过滤碰撞帧（`_filter_waypoint_direction`）：text_prompt 中 `Collisions: AA=... AO=...` 非零即丢弃。样本 < 20 或过滤后 < 10% 时跳过。
 
 ---
 
-## 5. 训练流程
+## 5. 训练
 
-### 5.1 数据集加载
+### 5.1 命令
 
-```python
-class VLADataset(Dataset):
-    # 从 JSONL 文件加载
-    # 支持 curriculum mixing: --data-mix "stage_1:0.2,stage_2:0.8"
-    # 自动 padding: 55-dim → 59-dim (尾部补 4 个 0)
-    # 碰撞过滤: 丢弃 text_prompt 中包含 Collisions: AA>0 或 AO>0 的帧
-    # max_samples: 限制样本数
+```bash
+# Stage 1: 从头训
+sbatch train.sh 1
+
+# Stage 2-4: 课程学习（加载前 stage checkpoint）
+sbatch train.sh 2
+
+# Fresh: 单数据集从头训
+sbatch train.sh fresh --data data/trajectories/stage_3 --epochs 8
+
+# Quick: 管线验证
+sbatch train.sh quick
 ```
 
-### 5.2 Curriculum 训练（4 阶段）
+### 5.2 配置
 
-| Stage | 数据 | Epochs | Batch | LR | 初始化 |
-|-------|------|--------|-------|-----|--------|
-| 1 | stage_1 (2 agents) | 8 | 4 | 3e-5 | 从头训练 |
-| 2 | 20% stage_1 + 80% stage_2 | 8 | 4 | 3e-5 | 加载 stage_1 |
-| 3 | 15%+15%+70% | 8 | 4 | 3e-5 | 加载 stage_2 |
-| 4 | 10%+10%+10%+70% | 8 | 4 | 3e-5 | 加载 stage_3 |
+| 参数 | 值 |
+|------|-----|
+| 模型 | openvla/openvla-7b |
+| LoRA rank | 128 |
+| 优化器 | AdamW, lr=3e-5, weight_decay=0.01 |
+| Scheduler | Cosine, 5% warmup |
+| Batch size | 4 |
+| Epochs | 8 (Stage), 4 (fresh 默认) |
+| Max grad norm | 1.0 |
+| Gradient checkpointing | 开启 |
 
-每阶段混合旧数据 10-20% 防止灾难性遗忘。
+**加速优化**：
+- 视觉 token 完全移除 (n_patches=0, 训练推理一致)：LLM input ~568→312 tokens, attention 快 ~70%
+- alpha_bar schedule 预计算：training loop 外一次性提前算好
+- Flash Attention 2 自动检测（未安装时回退标准 attention）
 
-### 5.3 优化配置
-
-- Optimizer: AdamW, lr=3e-5, weight_decay=0.01
-- Scheduler: Cosine, 5% warmup
-- Gradient clipping: max_norm=1.0
-- DDP: `torchrun --nproc_per_node=1`（单卡）
-
-### 5.4 训练循环
+### 5.3 训练循环
 
 ```
 for batch in DataLoader:
-    1. 视觉编码 (SigLIP, frozen, torch.no_grad)
+    1. visual_tokens = zeros(0)  (已移除)
     2. agent_embeds = Encoder(agent_feat)
     3. text_embeds = Tokenizer(text_prompts)
     4. combined = cat(visual_tokens + agent_embeds + text_embeds)
-    5. LLM forward (with_grad for LoRA)
-    6. hidden = LLM_hidden_at_agent_positions
-    7. target_flat = global_waypoints → local_frame (旋转 + 减位置)
-    8. DDPM_loss = compute_diffusion_loss(target_flat, hidden, goal_feat_local)
-    9. collision_penalty = penalize low-LiDAR + near-obstacle + is_mobile
-    10. loss = DDPM_loss + 0.05 * collision_penalty
-    11. backward + clip_grad + step
+    5. LLM forward → hidden = hidden_at_agent_positions
+    6. target_flat = 全局wp → 局部帧 (旋转 + 减位置)
+    7. loss = DDPM_loss + dir_loss + wrong_dir + mag_penalty + smooth_penalty + collision_penalty
+    8. backward + clip_grad + step
 ```
+
+### 5.4 Checkpoint 结构
+
+```
+weights/stage_N/
+├── encoder.pt           # AgentFeatureEncoder 权重
+├── diffusion_head.pt    # DiffusionActionHead 权重
+└── lora_adapter/        # PEFT LoRA adapter (adapter_config.json + model.safetensors)
+```
+
+加载时 `PeftModel.from_pretrained()` 后显式 `p.requires_grad = True` for lora params，避免 LoRA 冻结 bug。
 
 ---
 
 ## 6. 损失函数
 
-### 6.1 主损失：DDPM Diffusion Loss
+预计算 `alpha_bar_schedule`（于 training loop 外），避免每 batch 重复构建。
+
+### 6.1 主损失：DDPM Diffusion Loss (λ=1.0)
 
 ```
-loss_diffusion = MSE(noise_pred, noise)
+loss = MSE(noise_pred, noise)
 ```
 
 - T=1000，cosine beta schedule
-- t ∈ [0, T/2] 随机采样（去噪前 500 步）
-- 预测目标：加入目标 waypoint 的噪声，而非直接回归坐标
-- 等价于估计动作分布的 score function，天然支持多模态
+- t ∈ [0, T/2] 均匀采样
+- 返回 loss, noise_pred, x_t, t 四元组（用于辅助损失计算 pred_x0）
 
-### 6.2 辅助损失：碰撞惩罚
+### 6.2 方向损失 (λ=0.3)
 
 ```
-goal_angle = atan2(goal_local_y, goal_local_x)
-lidar_bin = ((goal_angle + π/2) / π × 16).clamp(0,15)
-goal_lidar = lidar_feat[bin]                         # 目标方向上的 LiDAR 距离
-nearest_obs = agent_feat[i, 52]                      # 最近障碍物距离
-is_mobile = state[QUEUING] + state[CRUISE]           # 仅在移动时惩罚
-
-collision_penalty = relu(0.5 - goal_lidar) + relu(0.5 - nearest_obs)
-loss = diffusion_loss + 0.05 × collision_penalty × is_mobile
+wp_vec = pred_wp[:,:,-1,:] − pred_wp[:,:,0,:]
+cos_sim = cosine(wp_vec, goal_feat)
+dir_loss = (1 − cos_sim).clamp(min=0).mean()
 ```
 
-### 6.3 数据级过滤
+要求 net displacement 朝向 goal。不附加 safety gate。
 
-`train.py` 的 `_filter_waypoint_direction` 在加载时丢弃碰撞帧：
-- 检查 text_prompt 中的 `Collisions: AA=... AO=...` 行
-- 如果 `AA=0 AO=0` 不成立 → 丢弃
-- 保护机制：样本 < 20 条或过滤后 < 10% 时跳过
+### 6.3 反向惩罚 (λ=0.2)
+
+```
+wrong_dir = relu(−cos_sim).mean()
+```
+
+当 waypoint 方向与 goal 完全相反时额外惩罚。
+
+### 6.4 幅度惩罚 (λ=0.2)
+
+```
+mag = wp_vec.norm
+penalty = relu(0.15 − mag).mean()
+```
+
+要求 8 步总位移 ≥ 0.15m。
+
+### 6.5 平滑性惩罚 (λ=0.05)
+
+```
+diff = pred_wp[:,:,1:,:] − pred_wp[:,:,:-1,:]
+penalty = (diff²).mean()
+```
+
+相邻 waypoint 之间位移差过大时惩罚，压制锯齿。
+
+### 6.6 碰撞惩罚 (λ=0.05)
+
+```
+nearest_obs = agent_feat[:, :, 52]
+penalty = relu(0.3 − nearest_obs).mean()
+```
+
+最近障碍物距离 < 0.3m 时惩罚。简化版：不查 LiDAR bins，不拘 is_mobile 限定。
 
 ---
 
-## 7. 推理流程
+## 7. 推理
 
 ### 7.1 推理调度
 
 ```
-VLAController.step(simulator):
-  1. 检查是否需要推理
-     - 距上次推理 ≥ chunk_size(8) 步 → 需要
-     - 任一 agent 的 waypoint 队列为空 → 需要
-  2. StateSerializer.serialize() → text_prompt + features
-  3. SimulatorRenderer.render() → 224×224 图像
-  4. OpenVLAPolicy.predict() → 各 agent 的 8 个全局 waypoint
-  5. _dispatch_waypoints() → WaypointTracker[aid].set_waypoints()
-  6. 对每个 agent (仅在 CRUISE/QUEUING/PREQUEUE 状态时):
-       WaypointTracker.compute_velocity(position) → (vx, vy)
-       设置 agent.linear_velocity
-  7. 对 LOADING/IDLE/HALT 状态的 agent: linear_velocity = (0, 0)
+每 chunk_size=8 步 (约 0.13s) 或任意 agent waypoint 为空时:
+  1. StateSerializer.serialize()
+  2. LLM forward → hidden states
+  3. DDIM 200 步去噪 → local waypoints
+  4. cos/sin 旋转 → global waypoints
+  5. WaypointTracker.set_waypoints()
 ```
 
 ### 7.2 WaypointTracker
 
-```
-每步: agent.position → waypoint_queue[0] 的距离 < 0.03m? → pop
-      dist = distance to current target waypoint
-      speed = min(cruise_speed, dist/dt × 0.8, max_step/dt)
-      if dist < 0.3: speed = min(speed, dist × 4)  # 靠近目标减速
-      (vx, vy) = normalize(direction) × speed
-```
+纯算法，不做第二层 AI：
+- 逐个 waypoint 跟随，到达阈值 0.03m 弹到下一 waypoint
+- 速度 = min(cruise_speed, dist/dt*0.8, max_step/dt)
+- dist < 0.3m 时额外减速：`min(speed, dist*4.0)`
+- 所有 waypoint 耗尽后速度 = (0,0)
 
-### 7.3 推理时的 DDIM 采样
+### 7.3 VLA 与 State Machine 职责划分
 
-```
-eta = 0.0（确定性采样）
-init: x₀ ~ N(0, I)  [1, N, 16]
-for 50 steps (从 T/2=500 倒序):
-  noise_pred = DiffusionHead(x_t, condition, goal_feat)
-  去噪: x_{t-1} = c₁ * pred_x₀ + c₂ * noise_pred
-output: [1, N, 16] → 每个 agent 的 8 个 local-frame waypoint
-转全局: gx = px + local_dx*cos(θ) - local_dy*sin(θ)
-```
-
-### 7.4 VLA 与 State Machine 的职责划分
-
-| Agent State | VLA 控制? | 说明 |
+| Agent State | VLA 控制? | 行为 |
 |-------------|-----------|------|
-| IDLE | ✗ (vel=0) | 无任务，等待状态机分配 |
-| CRUISE | ✓ | VLA 生成 waypoint 驱动机器人移动 |
-| PREQUEUE | ✓ | 等待进入港口队列，微调位置 |
-| QUEUING | ✓ | 移动到具体 slot 位置 |
-| LOADING | ✗ (vel=0) | 港口操作中，必须静止 |
-| HALT | ✗ (vel=0) | 紧急停止 |
+| CRUISE, PREQUEUE, QUEUING | ✓ | VLA 生成 waypoint 驱动机器人移动 |
+| IDLE, LOADING, HALT | ✗ | 速度 = (0, 0) |
 
-State machine 负责：任务分配、港口准入、队列管理、操作计时。
-VLA 负责：移动路径规划（仅在移动状态下）。
+State machine 负责：任务分配/港口准入/队列管理/操作计时。VLA 负责移动路径。
 
----
-
-## 8. Checkpoint 管理
-
-### 8.1 文件结构
+### 7.4 DDIM 采样
 
 ```
-weights/stage_1/
-├── encoder.pt           # AgentFeatureEncoder 权重
-├── diffusion_head.pt    # DiffusionActionHead 权重
-└── lora_adapter/        # PEFT LoRA adapter
-    ├── adapter_config.json
-    └── adapter_model.safetensors
-```
-
-### 8.2 保存/加载接口
-
-| 文件 | 保存 (`train.py`) | 加载 (`model_loader.py`) |
-|------|-------------------|--------------------------|
-| encoder.pt | `torch.save(encoder.state_dict())` | `torch.load(path); encoder.load_state_dict()` |
-| diffusion_head.pt | `torch.save(diffusion_head.state_dict())` | `torch.load(path); diffusion_head.load_state_dict()` |
-| lora_adapter/ | `llm.save_pretrained(dir)` | `PeftModel.from_pretrained(llm, dir)` |
-
-encoder/diffusion_head 的 `input_dim` 和 `hidden_dim` 在训练和推理中保持一致（59 / 4096）。
-
-### 8.3 模型加载流程
-
-```python
-# simulator.py
-use_mock = cmd_args.vla_model is None  # --vla 不带 --vla-model → mock
-
-# vla_controller.py
-if use_mock:     → MockVLAPolicy (直线走向目标, 调试用)
-else:            → load_openvla_policy(model_id, device)
-                    → if checkpoint_dir: load_checkpoint(encoder+head+LoRA)
+eta=0 (确定性), ddim_steps=200
+从 N(0,I) 出发, 200 步迭代去噪 → local waypoints
 ```
 
 ---
 
-## 9. 状态机集成
-
-### 9.1 VLA 模式下的状态转换
-
-```
-IDLE  → go_for_next_loading_task → CRUISE (task = go to loading port)
-                                      │ VLA 控制移动到 loading port
-                                      ▼
-CRUISE → in_control_range → approaching → confirm_enter → QUEUING
-                                      │ VLA 控制移动到 slot
-                                      ▼
-QUEUING → in_operation_zone → start_loading → LOADING
-                                      │ vel = 0, port 操作 2 秒
-                                      ▼
-LOADING → operate_done → CRUISE (task = go to unloading port, carrying item)
-                                      │ VLA 控制移动到 unloading port
-                                      ▼
-CRUISE → ... → LOADING → operate_done → CRUISE (task = go to loading port)
-                                      │ 循环，每完成一次 unload PPH+1
-                                      ▼
-```
-
-### 9.2 与普通模式的差异
-
-普通模式 (`__update_agent_state`):
-```python
-agent.observe() → agent.plan() → agent.act()
-# agent.plan() 调用 global planner + local planner
-```
-
-VLA 模式:
-```python
-agent.observe()
-agent.state_machine.next_state()  # 仅状态转换, 不调 planner
-VLAController 控制 velocity        # VLA 替代 planner
-```
-
----
-
-## 10. CLI / 接口
-
-### 10.1 命令行参数
-
-```
---vla              启用 VLA 模式 (默认用 MockVLAPolicy)
---vla-model ID     加载 OpenVLA-7B (如 openvla/openvla-7b)
---vla-device DEV   cpu / cuda
---vla-checkpoint DIR 加载训练好的 checkpoint (encoder.pt + diffusion_head.pt + lora_adapter/)
---vla-collect      数据采集模式 (手写 planner 驱动, 记录 expert 轨迹)
---mix RATIOS       采集模式下的混合控制比例 (expert:policy:random)
---vla-stride N     采集模式下的 waypoint 步距 (default 1)
-```
-
-### 10.2 SLURM 脚本
+## 8. 推理命令
 
 ```bash
-sbatch collect_data.sh <stage>        # 1-4, 数据采集
-sbatch train.sh <stage>               # 1-4, 课程训练
-sbatch eval.sh <stage> [minutes]      # 1-4, 模型评估
-sbatch train.sh quick                 # OpenVLA-7B 快速验证 (5 epochs, 200 samples, ~30min)
-sbatch eval.sh quick                  # 快速推理验证 (仅 VLA, 不比 expert)
+# 评估 Stage N
+sbatch eval.sh <stage>
+
+# fresh 推理
+sbatch eval.sh fresh
+
+# 自定义 checkpoint
+sbatch eval.sh 3 --vla-checkpoint weights/stage_fresh
 ```
+
+eval 运行：先 VLA 推理 N 分钟，后 Expert baseline N 分钟。quick/fresh 模式跳过 baseline。
+
+VLA 推理 timeout=(N*60+60) 秒，Expert baseline timeout=(N*60*5+60) 秒（5x 冗余）。
 
 ---
 
-## 11. 已知问题与设计决策
+## 9. CLI 参数
 
-### 11.1 已知问题
+| 参数 | 说明 |
+|------|------|
+| `--vla` | 启用 VLA 模式 |
+| `--vla-model ID` | OpenVLA model (默认 mock) |
+| `--vla-device DEV` | cpu / cuda |
+| `--vla-checkpoint DIR` | 加载 encoder.pt + diffusion_head.pt + lora_adapter/ |
+| `--vla-collect` | 数据采集模式 |
+| `--mix expert:policy:random` | DAgger mix 比例 |
 
-| ID | 严重度 | 描述 | 位置 |
-|----|--------|------|------|
-| KN-1 | Low | `_filter_waypoint_direction` 名称误导——实际过滤碰撞帧，非 waypoint 方向 | `train.py:112` |
-| KN-2 | Low | `DataCollector.step()` / `should_collect()` 未被调用，死代码 | `data_collector.py:66-70` |
-| KN-3 | Low | 碰撞过滤用字符串匹配 `"AA=0 AO=0"`，格式化变动会失效 | `train.py:118` |
-| KN-4 | Low | `_nearest_port` 未找到 port 时返回角度 0（forward），应返回 sentinel | `state_serializer.py:231` |
-| KN-5 | Low | `_pending_state` 用第一个 agent 的 history 长度做全部 agent 的代理检查 | `vla_controller.py:119` |
-| KN-6 | Info | Feat indices 14-15（goal_heading cos/sin 全局帧）从未在训练或推理中使用，冗余 | `state_serializer.py:297` |
-| KN-7 | Info | 离散 action mode (`action_mode="discrete"`) 的 bin 范围错误：对全局坐标做 [−0.6,0.6] 裁剪 | `data_collector.py:87` |
+---
 
-### 11.2 设计决策
+## 10. 设计决策
 
 | 决策 | 理由 |
 |------|------|
-| 保留 SigLIP 视觉编码器 | 利用 OpenVLA 预训练的多模态能力；top-down 渲染图虽简但保留空间拓扑 |
-| MLP 编码器替代视觉微调 | 230K 参数直接从结构化特征学习，比渲染+ViT 更高效精确 |
-| Action Chunking (8 步) | ACT/Diffusion Policy 成熟范式；纯算法 WaypointTracker 避免 LLM 级误差累积 |
-| DDPM 替代 BC MSE | 支持多模态动作分布（两条路径 → 不会取平均走中间撞墙） |
-| LoRA rank=128 | 覆盖足够表达能力 + 单卡 24GB 可训练；q_proj/v_proj 覆盖关键注意力层 |
-| 碰撞 loss 为辅 (λ=0.05) | 不影响主训练方向，仅做 mild push；太大会干扰 waypoint 精度 |
-| queuing state 允许 VLA 控制 | 进入 slot 需要微调位置，不能完全停止 |
+| 保留 Llama2-7B 主干 (frozen + LoRA) | Open X-Embodiment 预训练的 state→action 映射内化；multi-head attention 天然支持多 agent 协调 |
+| 移除视觉 token (SigLIP) | 59 维特征 + text prompt 覆盖所有空间信息；低质量 top-down 渲染图贡献极低 |
+| 用 DDPM 替代 BC MSE | 支持多模态动作分布，避免平均化导致撞墙 |
+| Action chunking (8 步) | RT-2/ACT/Diffusion Policy 成熟范式；WaypointTracker 纯算法避免 LLM 级误差累积 |
+| Gradient checkpointing | 5-agent + LoRA 训练必须开，否则 OOM |
+| Alpha_bar 预计算 | 避免每 batch 重复构造 1000 维的 cosine schedule |
 
-### 11.3 向后兼容
+---
 
-- 旧 55-dim 数据自动 padding 到 59-dim（尾部补 4 个 0）
-- Feature dim 从数据自动检测 (`VLADataset._feature_dim`)
-- 碰撞过滤有保护（样本数 < 20 或过滤后 < 10% 时跳过）
+## 11. 已知问题
+
+| 严重度 | 描述 | 位置 |
+|--------|------|------|
+| Low | `_filter_waypoint_direction` 名称 misleading（实际过滤碰撞帧） | `train.py` |
+| Low | `DataCollector.step()/should_collect()` 死代码 | `data_collector.py` |
+| Low | 碰撞过滤用字符串匹配 `AA=0 AO=0` | `train.py` |
+| Info | Feature indices 14-15 (goal_heading) 训练推理均未使用 | `state_serializer.py` |
+| Info | 离散 action mode 的 bin 范围错误（未修复，unused path） | `data_collector.py` |
+| Info | Flash Attention 2 自动检测但 superPOD 未安装 | `train.py` |
