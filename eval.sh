@@ -23,9 +23,10 @@
 #   sbatch eval.sh 2 10                  # 在 stage_2 上评估 10 分钟
 #   sbatch eval.sh 1 5 --agent 4 --port 4 4   # 自定义场景
 #   sbatch eval.sh quick                 # 快速管线验证 (2min)
+#   sbatch eval.sh fresh                 # 评估 fresh 训练 (stage_3 场景)
 # =============================================
 
-STAGE=${1:?"Usage: $0 <stage> [sim_minutes] [extra_args]; stage=1|2|3|4|quick"}
+STAGE=${1:?"Usage: $0 <stage> [sim_minutes] [extra_args]; stage=1|2|3|4|quick|fresh"}
 
 SIM_MINUTES=""
 if [ -n "$2" ] && [[ "$2" =~ ^[0-9]+$ ]]; then
@@ -62,7 +63,8 @@ case $STAGE in
   3) AGENTS=5; LOAD_P=5; UNLOAD_P=5; MAP_W=40; MAP_H=20 ;;
   4) AGENTS=7; LOAD_P=7; UNLOAD_P=7; MAP_W=45; MAP_H=20 ;;
   quick) AGENTS=2; LOAD_P=2; UNLOAD_P=2; MAP_W=20; MAP_H=12 ;;
-  *) echo "Error: stage must be 1-4 or quick"; exit 1 ;;
+  fresh) AGENTS=5; LOAD_P=5; UNLOAD_P=5; MAP_W=40; MAP_H=20 ;;
+  *) echo "Error: stage must be 1-4, quick, or fresh"; exit 1 ;;
 esac
 
 CKPT_DIR="${WEIGHT_DIR}/stage_${STAGE}"
