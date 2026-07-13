@@ -94,7 +94,7 @@ if [ "$STAGE" != "quick" ]; then
     echo "=============================="
     echo ""
     echo ">>> [2/2] Expert baseline (hand-written planners, ${SIM_MINUTES} min) <<<"
-    timeout $((SIM_MINUTES * 60 + 60)) python simulator.py \
+timeout $((SIM_MINUTES * 60 * 5 + 60)) python simulator.py \
         -t ${SIM_MINUTES} \
         --agent ${AGENTS} --port ${LOAD_P} ${UNLOAD_P} \
         --size ${MAP_W} ${MAP_H} \
