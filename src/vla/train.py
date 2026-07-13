@@ -153,12 +153,6 @@ class VLADataset(Dataset):
         target_tensor = torch.stack(target_wps)
 
         image = None
-        image_path = record.get("image_path")
-        if image_path:
-            full_path = os.path.join(self.base_dirs[idx], image_path)
-            if os.path.exists(full_path):
-                from PIL import Image as PILImage
-                image = np.array(PILImage.open(full_path).convert("RGB"))
 
         return agents_feat, text_prompt, target_tensor, image
 
@@ -204,6 +198,7 @@ def train(args):
         shuffle=sampler is None,
         sampler=sampler,
         collate_fn=collate_vla,
+        num_workers=4, pin_memory=True,
     )
 
     # ---- Model loading (mock or real OpenVLA) ----
@@ -459,6 +454,12 @@ def train(args):
     # ---- Training loop (DDPM diffusion loss, unified float32) ----
     if is_main:
         print(f"\nTraining: {args.epochs} epochs x {len(loader)} steps/batch={args.batch_size}")
+
+    beta_schedule = _cosine_beta_schedule(1000).to(device)
+    alpha_bar_schedule = torch.cumprod(1 - beta_schedule, dim=0)
+    sqrt_alpha_bar_schedule = alpha_bar_schedule.sqrt()
+    sqrt_one_minus_alpha_bar_schedule = (1 - alpha_bar_schedule).sqrt()
+
     global_step = 0
     for epoch in range(args.epochs):
         if sampler is not None:
@@ -524,11 +525,8 @@ def train(args):
             loss, noise_pred, x_t, t = compute_diffusion_loss(diffusion_head, target_flat, hidden, goal_features=goal_feat)
 
             if noise_pred is not None and t is not None:
-                beta = _cosine_beta_schedule(1000).to(device)
-                alpha = 1 - beta
-                alpha_bar = torch.cumprod(alpha, dim=0)
-                sqrt_alpha_bar_t = alpha_bar[t].sqrt().view(B, 1, 1)
-                sqrt_one_minus_t = (1 - alpha_bar[t]).sqrt().view(B, 1, 1)
+                sqrt_alpha_bar_t = sqrt_alpha_bar_schedule[t].view(B, 1, 1)
+                sqrt_one_minus_t = sqrt_one_minus_alpha_bar_schedule[t].view(B, 1, 1)
                 pred_x0 = (x_t - sqrt_one_minus_t * noise_pred) / (sqrt_alpha_bar_t + 1e-8)
 
                 pred_local = pred_x0.reshape(B, n_active, -1, 2)
@@ -539,34 +537,22 @@ def train(args):
                 cos_sim = (wp_vec * goal_feat).sum(-1) / (wp_norm.squeeze(-1) * goal_norm.squeeze(-1) + 1e-8)
                 dir_loss = (1.0 - cos_sim).clamp(min=0.0)
 
-                nearest_obs = agent_feat[:, :n_active, 52]
-                min_lidar = agent_feat[:, :n_active, 36:52].min(dim=-1).values
-                near_port = agent_feat[:, :n_active, 7]
-
-                obs_safe = torch.sigmoid((nearest_obs - 0.5) / 0.2)
-                lidar_safe = torch.sigmoid((min_lidar - 0.5) / 0.2)
-                port_safe = 1.0 - near_port
-                safety = obs_safe * lidar_safe * port_safe
-
-                dir_weighted = (dir_loss * safety).mean()
+                dir_weighted = dir_loss.mean()
                 loss = loss + 0.3 * dir_weighted
 
+                wrong_dir = torch.relu(-cos_sim).mean()
+                loss = loss + 0.2 * wrong_dir
+
                 mag = wp_norm.squeeze(-1)
-                mag_penalty = torch.relu(0.05 - mag).mean()
-                loss = loss + 0.1 * mag_penalty
+                mag_penalty = torch.relu(0.15 - mag).mean()
+                loss = loss + 0.2 * mag_penalty
 
                 wp_diffs = pred_local[:, :, 1:, :] - pred_local[:, :, :-1, :]
                 smooth_penalty = (wp_diffs ** 2).mean()
                 loss = loss + 0.05 * smooth_penalty
 
             nearest_obs = agent_feat[:, :n_active, 52]
-            goal_angle = torch.atan2(goal_feat[:, :, 1], goal_feat[:, :, 0])
-            lidar_bin = ((goal_angle + 1.57079633) / 3.14159265 * 16).long().clamp(0, 15)
-            lidar_feat = agent_feat[:, :n_active, 36:52]
-            goal_lidar = lidar_feat.gather(-1, lidar_bin.unsqueeze(-1)).squeeze(-1)
-            nearest_obs = agent_feat[:, :n_active, 52]
-            is_mobile = agent_feat[:, :n_active, 7] + agent_feat[:, :n_active, 9]
-            collision_penalty = (torch.relu(0.5 - goal_lidar) + torch.relu(0.5 - nearest_obs)) * is_mobile
+            collision_penalty = torch.relu(0.3 - nearest_obs)
             loss = loss + 0.05 * collision_penalty.mean()
 
             optimizer.zero_grad()
