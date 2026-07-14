@@ -81,7 +81,7 @@ class StateSerializer:
                 "position": (position.x, position.y) if hasattr(position, 'x') else position,
                 "angle_deg": angle * 180.0 / pi,
                 "angle_rad": angle,
-                "speed": getattr(agent, 'speed', 0),
+                "speed": (agent_body.linearVelocity[0]**2 + agent_body.linearVelocity[1]**2)**0.5,
                 "state": state_str,
                 "carrying_item": has_item,
                 "destination": (goal.x, goal.y) if goal is not None and hasattr(goal, 'x') else None,
