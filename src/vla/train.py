@@ -538,14 +538,11 @@ def train(args):
                 dir_loss = (1.0 - cos_sim).clamp(min=0.0)
 
                 dir_weighted = dir_loss.mean()
-                loss = loss + 0.3 * dir_weighted
-
-                wrong_dir = torch.relu(-cos_sim).mean()
-                loss = loss + 0.2 * wrong_dir
+                loss = loss + 0.1 * dir_weighted
 
                 mag = wp_norm.squeeze(-1)
-                mag_penalty = torch.relu(0.15 - mag).mean()
-                loss = loss + 0.2 * mag_penalty
+                mag_penalty = torch.relu(0.1 - mag).mean()
+                loss = loss + 0.1 * mag_penalty
 
                 wp_diffs = pred_local[:, :, 1:, :] - pred_local[:, :, :-1, :]
                 smooth_penalty = (wp_diffs ** 2).mean()
@@ -553,7 +550,7 @@ def train(args):
 
             nearest_obs = agent_feat[:, :n_active, 52]
             collision_penalty = torch.relu(0.3 - nearest_obs)
-            loss = loss + 0.05 * collision_penalty.mean()
+            loss = loss + 0.02 * collision_penalty.mean()
 
             optimizer.zero_grad()
             loss.backward()
