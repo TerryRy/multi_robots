@@ -27,7 +27,7 @@ import numpy as np
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from vla.model_loader import AgentFeatureEncoder, FastProjector
-from vla.diffusion_head import DiffusionActionHead, compute_diffusion_loss, _cosine_beta_schedule
+from vla.diffusion_head import DiffusionActionHead, compute_diffusion_loss
 
 
 class VLADataset(Dataset):
@@ -455,11 +455,6 @@ def train(args):
     if is_main:
         print(f"\nTraining: {args.epochs} epochs x {len(loader)} steps/batch={args.batch_size}")
 
-    beta_schedule = _cosine_beta_schedule(1000).to(device)
-    alpha_bar_schedule = torch.cumprod(1 - beta_schedule, dim=0)
-    sqrt_alpha_bar_schedule = alpha_bar_schedule.sqrt()
-    sqrt_one_minus_alpha_bar_schedule = (1 - alpha_bar_schedule).sqrt()
-
     global_step = 0
     for epoch in range(args.epochs):
         if sampler is not None:
@@ -522,35 +517,7 @@ def train(args):
             goal_local_x = goal_global[:, :, 0:1] * cos_h + goal_global[:, :, 1:2] * sin_h
             goal_local_y = -goal_global[:, :, 0:1] * sin_h + goal_global[:, :, 1:2] * cos_h
             goal_feat = torch.cat([goal_local_x, goal_local_y], dim=-1)
-            loss, noise_pred, x_t, t = compute_diffusion_loss(diffusion_head, target_flat, hidden, goal_features=goal_feat)
-
-            if noise_pred is not None and t is not None:
-                sqrt_alpha_bar_t = sqrt_alpha_bar_schedule[t].view(B, 1, 1)
-                sqrt_one_minus_t = sqrt_one_minus_alpha_bar_schedule[t].view(B, 1, 1)
-                pred_x0 = (x_t - sqrt_one_minus_t * noise_pred) / (sqrt_alpha_bar_t + 1e-8)
-
-                pred_local = pred_x0.reshape(B, n_active, -1, 2)
-                wp_vec = pred_local[:, :, -1, :] - pred_local[:, :, 0, :]
-
-                goal_norm = goal_feat.norm(dim=-1, keepdim=True) + 1e-8
-                wp_norm = wp_vec.norm(dim=-1, keepdim=True) + 1e-8
-                cos_sim = (wp_vec * goal_feat).sum(-1) / (wp_norm.squeeze(-1) * goal_norm.squeeze(-1) + 1e-8)
-                dir_loss = (1.0 - cos_sim).clamp(min=0.0)
-
-                dir_weighted = dir_loss.mean()
-                loss = loss + 0.1 * dir_weighted
-
-                mag = wp_norm.squeeze(-1)
-                mag_penalty = torch.relu(0.1 - mag).mean()
-                loss = loss + 0.1 * mag_penalty
-
-                wp_diffs = pred_local[:, :, 1:, :] - pred_local[:, :, :-1, :]
-                smooth_penalty = (wp_diffs ** 2).mean()
-                loss = loss + 0.05 * smooth_penalty
-
-            nearest_obs = agent_feat[:, :n_active, 52]
-            collision_penalty = torch.relu(0.3 - nearest_obs)
-            loss = loss + 0.02 * collision_penalty.mean()
+            loss, _, _, _ = compute_diffusion_loss(diffusion_head, target_flat, hidden, goal_features=goal_feat)
 
             optimizer.zero_grad()
             loss.backward()
