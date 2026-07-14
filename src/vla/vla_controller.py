@@ -90,13 +90,15 @@ class VLAController:
                 py = pos.y if hasattr(pos, 'y') else pos[1]
                 self._pos_history[agent.id].append((px, py))
 
-            if self._step_counter == 1:
+            if self._step_counter % self.chunk_size == 1:
                 self._current_controller = self._pick_controller()
                 if DEBUG:
                     print(f"  Controller: {self._current_controller}")
 
             if self._current_controller == "policy" and self._model is not None:
-                self._run_policy_control(simulator)
+                if self._step_counter % self.chunk_size == 1:
+                    self._run_policy_control(simulator)
+                self._apply_tracker_velocities()
             elif self._current_controller == "random":
                 self._run_random_control(simulator)
 
@@ -175,11 +177,31 @@ class VLAController:
                 position = Point(position.x, position.y)
             vx, vy = tracker.compute_velocity(position)
             agent.linear_velocity = (vx, vy)
+            agent.speed = (vx * vx + vy * vy) ** 0.5
 
     def _run_policy_control(self, simulator):
         text_prompt, features, agents_data = self.serializer.serialize(simulator)
         vla_output = self._model.predict(text_prompt, features)
         self._dispatch_waypoints(vla_output, agents_data, simulator)
+
+    def _apply_tracker_velocities(self):
+        for agent in self.agents:
+            tracker = self.trackers.get(agent.id)
+            if tracker is None:
+                continue
+            if hasattr(agent, 'state') and agent.state not in (AgentState.CRUISE, AgentState.PREQUEUE, AgentState.QUEUING):
+                agent.linear_velocity = (0.0, 0.0)
+                agent.speed = 0.0
+                continue
+            if not tracker.has_waypoints():
+                continue
+            position = agent.position
+            if hasattr(position, 'x'):
+                from geometry import Point
+                position = Point(position.x, position.y)
+            vx, vy = tracker.compute_velocity(position)
+            agent.linear_velocity = (vx, vy)
+            agent.speed = (vx * vx + vy * vy) ** 0.5
 
     def _run_random_control(self, simulator):
         for agent in self.agents:
@@ -194,6 +216,7 @@ class VLAController:
             angle = goal_angle + rnd.uniform(-0.5, 0.5)
             speed = rnd.uniform(0, agent.cruise_speed * 0.5)
             agent.linear_velocity = (cos(angle) * speed, sin(angle) * speed)
+            agent.speed = speed
 
     def _dispatch_waypoints(self, vla_output, agents_data, simulator):
         num_agents = len(agents_data)
