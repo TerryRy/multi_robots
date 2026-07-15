@@ -542,6 +542,8 @@ def train(args):
                 wp_norm = wp_vec.norm(dim=-1, keepdim=True) + 1e-8
                 cos_sim = (wp_vec * goal_feat).sum(-1) / (wp_norm.squeeze(-1) * goal_norm.squeeze(-1) + 1e-8)
                 loss = loss + 0.01 * (1.0 - cos_sim).clamp(min=0.0).mean()
+                wp_diffs = pred_local[:, :, 1:, :] - pred_local[:, :, :-1, :]
+                loss = loss + 0.05 * (wp_diffs ** 2).mean()
 
             optimizer.zero_grad()
             loss.backward()
