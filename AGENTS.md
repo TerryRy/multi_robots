@@ -67,3 +67,50 @@ python control.py                       # 交互式控制面板（cmd2）
 - 每模拟秒步进 = `1.0/steps_per_sec`（config.json 中默认 60）
 - agent.angle 每步在 `simulator.step()` 中从 linear_velocity 重新计算（非差速轮模式）
 - 如果遇到 macOS 上 `matplotlib`/`pygame` 导致的段错误：将 `matplotlibrc` 中的 `backend` 设为 `agg`
+
+## VLA 轮式控制（wheel 分支）
+
+本分支将 VLA 的输出从全局 waypoint 改为**差速轮速度 (left, right)**。
+
+### 核心理念
+
+- 5 台机器人 → 10 个车轮输出
+- VLA 更擅长底层、连续、与机器人无关的控制
+- 车轮速度天然是机器人局部坐标系，不需要坐标变换
+
+### 改动文件
+
+| 文件 | 改动 |
+|------|------|
+| `src/vla/wheel_kinematics.py` | **新增**：车轮↔速度换算（wheel_base=0.3，来自原有规划器参数） |
+| `src/vla/vla_controller.py` | 移除 WaypointTracker，改为 8 组 (left,right) 缓冲逐步执行 |
+| `src/vla/train.py` | 移除坐标变换和方向损失，保留平滑损失 |
+| `src/vla/model_loader.py` | 输出直接为 (left,right)，无需旋转到全局坐标 |
+| `src/vla/state_serializer.py` | 角度从 `agent.wheel_heading` 读取 |
+| `src/simulator.py` | `body.angle` 优先使用 `agent.wheel_heading` |
+
+### 数据流程
+
+```
+采集: 专家 → (vx, vy) → velocity_to_wheels() → (left, right) → JSONL
+训练: JSONL → MSE(noise_pred, noise) + 0.05×平滑损失
+推理: 模型 → 8×(left, right) → wheels_to_velocity() → (vx, vy, heading)
+        → agent.linear_velocity + agent.wheel_heading + body.angle
+```
+
+### 使用
+
+```bash
+cd ~/ip/multi_robots
+git checkout wheel
+git pull
+
+# 采集数据
+sbatch collect_data.sh 3
+
+# 训练
+sbatch train.sh fresh
+
+# 评估
+sbatch eval.sh fresh
+```
