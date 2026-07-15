@@ -27,7 +27,7 @@ import numpy as np
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from vla.model_loader import AgentFeatureEncoder, FastProjector
-from vla.diffusion_head import DiffusionActionHead, compute_diffusion_loss
+from vla.diffusion_head import DiffusionActionHead, compute_diffusion_loss, _cosine_beta_schedule
 
 
 class VLADataset(Dataset):
@@ -528,7 +528,20 @@ def train(args):
             goal_local_x = goal_global[:, :, 0:1] * cos_h + goal_global[:, :, 1:2] * sin_h
             goal_local_y = -goal_global[:, :, 0:1] * sin_h + goal_global[:, :, 1:2] * cos_h
             goal_feat = torch.cat([goal_local_x, goal_local_y], dim=-1)
-            loss, _, _, _ = compute_diffusion_loss(diffusion_head, target_flat, hidden, goal_features=goal_feat)
+            loss, noise_pred, x_t, t = compute_diffusion_loss(diffusion_head, target_flat, hidden, goal_features=goal_feat)
+
+            if noise_pred is not None and t is not None:
+                beta = _cosine_beta_schedule(1000).to(device)
+                alpha_bar = torch.cumprod(1 - beta, dim=0)
+                sqrt_ab = alpha_bar[t].sqrt().view(B, 1, 1)
+                sqrt_1m_ab = (1 - alpha_bar[t]).sqrt().view(B, 1, 1)
+                pred_x0 = (x_t - sqrt_1m_ab * noise_pred) / (sqrt_ab + 1e-8)
+                pred_local = pred_x0.reshape(B, n_active, -1, 2)
+                wp_vec = pred_local[:, :, -1, :] - pred_local[:, :, 0, :]
+                goal_norm = goal_feat.norm(dim=-1, keepdim=True) + 1e-8
+                wp_norm = wp_vec.norm(dim=-1, keepdim=True) + 1e-8
+                cos_sim = (wp_vec * goal_feat).sum(-1) / (wp_norm.squeeze(-1) * goal_norm.squeeze(-1) + 1e-8)
+                loss = loss + 0.01 * (1.0 - cos_sim).clamp(min=0.0).mean()
 
             optimizer.zero_grad()
             loss.backward()
