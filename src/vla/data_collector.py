@@ -10,7 +10,7 @@ class DataCollector:
     Saves top-down images as PNG alongside JSONL records.
     """
 
-    def __init__(self, save_dir="data/trajectories", action_mode="continuous",
+    def __init__(self, save_dir="data/trajectories_wheel", action_mode="continuous",
                  chunk_size=8, collect_every_n_steps=4, renderer=None):
         self.save_dir = save_dir
         self.action_mode = action_mode

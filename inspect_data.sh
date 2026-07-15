@@ -20,7 +20,7 @@ VENV_DIR=$HOME/ip/venv
 source ${VENV_DIR}/bin/activate
 
 export PYTHONUNBUFFERED=1
-DATA_DIR=$HOME/ip/multi_robots/data/trajectories/stage_${STAGE}
+DATA_DIR=$HOME/ip/multi_robots/data/trajectories_wheel/stage_${STAGE}
 
 echo "============================================"
 echo "Data Inspection: stage_${STAGE}"

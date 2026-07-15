@@ -41,8 +41,8 @@ export HF_HOME=$HOME/ip/models/hf_cache
 export PYTHONUNBUFFERED=1
 
 PROJ_DIR=$HOME/ip/multi_robots
-DATA_DIR=${PROJ_DIR}/data/trajectories
-WEIGHT_DIR=${PROJ_DIR}/weights
+DATA_DIR=${PROJ_DIR}/data/trajectories_wheel
+WEIGHT_DIR=${PROJ_DIR}/weights_wheel
 SRC_DIR=${PROJ_DIR}/src
 mkdir -p ${WEIGHT_DIR} ${DATA_DIR}
 

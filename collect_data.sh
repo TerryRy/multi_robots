@@ -73,7 +73,7 @@ export HF_HOME=$HOME/ip/models/hf_cache
 export PYTHONUNBUFFERED=1
 
 PROJ_DIR=$HOME/ip/multi_robots
-DATA_DIR=${PROJ_DIR}/data/trajectories
+DATA_DIR=${PROJ_DIR}/data/trajectories_wheel
 SRC_DIR=${PROJ_DIR}/src
 mkdir -p ${DATA_DIR}
 
@@ -93,11 +93,11 @@ python simulator.py --vla-collect -t ${SIM_TIME} \
 
 echo ""
 echo "Moving data to stage_${STAGE}..."
-mkdir -p ${DATA_DIR}/stage_${STAGE}
-mv data/trajectories/session_*.jsonl ${DATA_DIR}/stage_${STAGE}/ 2>/dev/null || true
-for d in data/trajectories/session_*/; do
-    [ -d "$d" ] && mv "$d" ${DATA_DIR}/stage_${STAGE}/ 2>/dev/null || true
-done
+    mkdir -p ${DATA_DIR}/stage_${STAGE}
+    mv data/trajectories_wheel/session_*.jsonl ${DATA_DIR}/stage_${STAGE}/ 2>/dev/null || true
+    for d in data/trajectories_wheel/session_*/; do
+        [ -d "$d" ] && mv "$d" ${DATA_DIR}/stage_${STAGE}/ 2>/dev/null || true
+    done
 
 count=$(ls ${DATA_DIR}/stage_${STAGE}/*.jsonl 2>/dev/null | wc -l)
 records=0

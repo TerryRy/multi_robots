@@ -50,7 +50,7 @@ source ${VENV_DIR}/bin/activate
 export PYTHONUNBUFFERED=1
 PROJ_DIR=$HOME/ip/multi_robots
 SRC_DIR=${PROJ_DIR}/src
-WEIGHT_DIR=${PROJ_DIR}/weights
+WEIGHT_DIR=${PROJ_DIR}/weights_wheel
 CACHE_DIR=$HOME/ip/models/hf_cache
 export HF_HOME=${CACHE_DIR}
 
