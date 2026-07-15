@@ -95,7 +95,7 @@ class VLADataset(Dataset):
         if self._feature_dim > 0:
             print(f"VLADataset: detected feature_dim={self._feature_dim}")
 
-        self._filter_waypoint_direction()
+        self._filter_stationary()
 
         if max_samples and max_samples < len(self.samples):
             indices = random.choices(
@@ -112,13 +112,24 @@ class VLADataset(Dataset):
     def feature_dim(self):
         return self._feature_dim if self._feature_dim > 0 else 59
 
-    def _filter_waypoint_direction(self):
+    def _filter_stationary(self):
         if len(self.samples) < 20:
             return
         filtered = []
         for i, sample in enumerate(self.samples):
             text = sample.get("text_prompt", "")
             if "Collisions:" in text and "AA=0 AO=0" not in text:
+                continue
+            target = sample.get("target_action", {})
+            max_disp = 0.0
+            for aid, wps in target.items():
+                if len(wps) >= 2:
+                    dx = wps[-1][0] - wps[0][0]
+                    dy = wps[-1][1] - wps[0][1]
+                    disp = (dx*dx + dy*dy)**0.5
+                    if disp > max_disp:
+                        max_disp = disp
+            if max_disp < 0.01:
                 continue
             filtered.append(i)
         if len(filtered) > max(10, len(self.samples) * 0.1):
@@ -127,7 +138,7 @@ class VLADataset(Dataset):
             self.sources = [self.sources[i] for i in filtered]
             self.base_dirs = [self.base_dirs[i] for i in filtered]
             self.instance_weights = [self.instance_weights[i] for i in filtered]
-            print(f"  Filtered {removed} collision frames, "
+            print(f"  Filtered {removed} stationary frames, "
                   f"{len(self.samples)} remaining")
 
     def __len__(self):
