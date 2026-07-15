@@ -87,6 +87,8 @@ def inspect(args):
     step_uniformities = []
     trajectory_curvatures = []
     heading_changes = []
+    agent_fingerprints = {}  # agent_id → set of (pos_x, pos_y, goal_dx, goal_dy)
+    agent_positions = {}     # agent_id → list of positions
 
     for ri, record in enumerate(all_records):
         text = record.get("text_prompt", "")
@@ -120,6 +122,15 @@ def inspect(args):
             goal_dx = feat[12]
             goal_dy = feat[13]
             goal_dist = math.sqrt(goal_dx**2 + goal_dy**2)
+            # Track unique (position, goal) per agent
+            fid = f"agent_{int(ai)}"
+            fp = (round(pos_x, 0), round(pos_y, 0), round(goal_dx, 0), round(goal_dy, 0))
+            if fid not in agent_fingerprints:
+                agent_fingerprints[fid] = set()
+            agent_fingerprints[fid].add(fp)
+            if fid not in agent_positions:
+                agent_positions[fid] = []
+            agent_positions[fid].append((pos_x, pos_y))
             goal_distances.append(goal_dist)
 
             wps = target[sidx]
@@ -279,6 +290,22 @@ def inspect(args):
     collision_pct = 100 * collision_count / len(all_records)
     print(f"\n[Collisions in Text Prompt]")
     print(f"  {collision_count}/{len(all_records)} records ({collision_pct:.0f}%)")
+
+    print(f"\n[Data Diversity]")
+    for fid in sorted(agent_fingerprints.keys()):
+        n_fp = len(agent_fingerprints[fid])
+        n_total = len(agent_positions[fid])
+        print(f"  {fid}: {n_fp} unique (pos,goal) combos out of {n_total} records")
+        if n_fp <= 3:
+            for fp in agent_fingerprints[fid]:
+                count = agent_positions[fid].count((fp[0], fp[1]))
+                print(f"    (x={fp[0]:.0f}, y={fp[1]:.0f}, gdx={fp[2]:.0f}, gdy={fp[3]:.0f})")
+    fps_list = [len(agent_fingerprints[fid]) for fid in agent_fingerprints]
+    if fps_list:
+        avg_fp = sum(fps_list) / len(fps_list)
+        print(f"  average unique combos per agent: {avg_fp:.0f}")
+        if avg_fp < 5:
+            print(f"  ⚠ LOW DIVERSITY: each agent repeats <5 behavior patterns")
 
     print(f"\n{'='*60}")
     print(f"VERDICT")
