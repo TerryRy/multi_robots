@@ -84,6 +84,9 @@ def inspect(args):
     agent_counts = Counter()
     has_moved_count = 0
     total_agent_samples = 0
+    step_uniformities = []
+    trajectory_curvatures = []
+    heading_changes = []
 
     for ri, record in enumerate(all_records):
         text = record.get("text_prompt", "")
@@ -149,6 +152,40 @@ def inspect(args):
                     err = 2 * math.pi - err
                 direction_errors.append(math.degrees(err))
 
+                # --- Diversity checks ---
+                # 1. Step uniformity: std of 7 inter-waypoint distances
+                step_dists = []
+                for k in range(len(wps) - 1):
+                    sd = math.sqrt((wps[k+1][0]-wps[k][0])**2 + (wps[k+1][1]-wps[k][1])**2)
+                    step_dists.append(sd)
+                if len(step_dists) > 1:
+                    step_mean = sum(step_dists) / len(step_dists)
+                    step_var = sum((d - step_mean)**2 for d in step_dists) / len(step_dists)
+                    step_uniformities.append(step_var**0.5 / max(step_mean, 1e-8))
+                # 2. Curvature: max perpendicular distance from first-last line
+                ax, ay = first_wp[0], first_wp[1]
+                bx, by = last_wp[0], last_wp[1]
+                line_len = math.sqrt((bx-ax)**2 + (by-ay)**2)
+                if line_len > 0.01:
+                    max_curv = 0.0
+                    for k in range(1, len(wps) - 1):
+                        px, py = wps[k]
+                        cross = abs((bx-ax)*(py-ay) - (by-ay)*(px-ax))
+                        max_curv = max(max_curv, cross / line_len)
+                    trajectory_curvatures.append(max_curv)
+                # 3. Heading change: total angle swept over 7 steps
+                if len(wps) >= 3:
+                    total_turn = 0.0
+                    prev_angle = compute_angle(wps[1][0]-wps[0][0], wps[1][1]-wps[0][1])
+                    for k in range(2, len(wps)):
+                        cur_angle = compute_angle(wps[k][0]-wps[k-1][0], wps[k][1]-wps[k-1][1])
+                        diff = cur_angle - prev_angle
+                        while diff > math.pi: diff -= 2*math.pi
+                        while diff < -math.pi: diff += 2*math.pi
+                        total_turn += abs(diff)
+                        prev_angle = cur_angle
+                    heading_changes.append(math.degrees(total_turn))
+
             # Print first N records
             if ri < 5:
                 heading_deg = math.degrees(heading) % 360
@@ -212,6 +249,27 @@ def inspect(args):
         stopped = 100 * (speed_arr < 0.01).sum() / len(speed_arr)
         print(f"  stopped (<0.01): {stopped:.0f}%")
 
+    print(f"\n[Trajectory Diversity] (moving samples only)")
+    step_arr = np.array(step_uniformities)
+    curv_arr = np.array(trajectory_curvatures)
+    turn_arr = np.array(heading_changes)
+    if len(step_arr) > 0:
+        print(f"  Step CV (std/mean of 7 step distances):")
+        print(f"    median={np.median(step_arr):.3f} 25%={np.percentile(step_arr,25):.3f} 75%={np.percentile(step_arr,75):.3f}")
+        print(f"    CV=0 = perfectly uniform steps (constant speed)")
+        uniform_pct = 100 * (step_arr < 0.01).sum() / len(step_arr)
+        print(f"    uniform steps (CV<0.01): {uniform_pct:.0f}%")
+    if len(curv_arr) > 0:
+        print(f"  Curvature (max deviation from straight line):")
+        print(f"    median={np.median(curv_arr):.3f} 25%={np.percentile(curv_arr,25):.3f} 75%={np.percentile(curv_arr,75):.3f}")
+        straight_pct = 100 * (curv_arr < 0.01).sum() / len(curv_arr)
+        print(f"    perfectly straight (curv<0.01): {straight_pct:.0f}%")
+    if len(turn_arr) > 0:
+        print(f"  Total heading change over 8 waypoints (degrees):")
+        print(f"    median={np.median(turn_arr):.1f} 25%={np.percentile(turn_arr,25):.1f} 75%={np.percentile(turn_arr,75):.1f}")
+        no_turn_pct = 100 * (turn_arr < 0.5).sum() / len(turn_arr)
+        print(f"    no turning (<0.5deg): {no_turn_pct:.0f}%")
+
     print(f"\n[State Distribution]")
     for sidx in sorted(states.keys()):
         label = state_labels.get(sidx, f"idx{sidx}")
@@ -232,8 +290,14 @@ def inspect(args):
         zero_pct = 100 * (wp_mag_arr < 0.01).sum() / len(wp_mag_arr)
         print(f"  Direction error median: {median_err:.0f}deg ({good_pct:.0f}% good)")
         print(f"  Waypoint magnitude median: {median_mag:.3f} ({zero_pct:.0f}% stationary)")
+        if len(step_arr) > 0:
+            step_cv_med = np.median(step_arr)
+            straight_pct = 100 * (curv_arr < 0.01).sum() / len(curv_arr) if len(curv_arr) > 0 else 0
+            print(f"  Step uniformity CV median: {step_cv_med:.3f}  Straight lines: {straight_pct:.0f}%")
         if median_err < 20 and median_mag > 0.5:
             print(f"  DATA QUALITY: GOOD")
+            if len(step_arr) > 0 and np.median(step_arr) < 0.01 and straight_pct > 90:
+                print(f"  DIVERSITY: POOR - all trajectories are identical straight lines")
         elif median_err < 45 and median_mag > 0.1:
             print(f"  DATA QUALITY: ACCEPTABLE")
         else:
