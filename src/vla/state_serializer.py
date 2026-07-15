@@ -44,7 +44,7 @@ class StateSerializer:
                 continue
 
             position = agent.position
-            angle = agent_body.angle
+            angle = getattr(agent, 'wheel_heading', agent_body.angle)
 
             goal = None
             goal_type = "none"

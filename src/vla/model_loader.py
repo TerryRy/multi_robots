@@ -6,28 +6,34 @@ from vla.diffusion_head import DiffusionActionHead, compute_diffusion_loss, ddim
 
 
 class MockVLAPolicy:
+    """Generates dummy wheel velocities toward the goal for testing."""
     def __init__(self, action_mode="continuous"):
         self.action_mode = action_mode
 
     def predict(self, text_prompt, features_dict, images=None):
         agents = features_dict.get("agents", [])
         num_agents = features_dict.get("num_agents", 0)
-        waypoints = {}
+        result = {}
         for i in range(min(num_agents, len(agents))):
             feat = agents[i]
-            px, py = feat[0], feat[1]
             dx, dy = feat[12], feat[13]
-            dist = math.sqrt(dx * dx + dy * dy)
-            if dist < 0.01:
-                waypoints[str(i)] = [(0.0, 0.0)] * 8
+            cos_h, sin_h = feat[2], feat[3]
+            # Goal in local frame
+            gx = dx * cos_h + dy * sin_h
+            gy = -dx * sin_h + dy * cos_h
+            dist = math.sqrt(gx * gx + gy * gy)
+            if dist < 0.1:
+                result[str(i)] = [(0.0, 0.0)] * 8
                 continue
-            sx, sy = dx / 8.0, dy / 8.0
-            wps, cx, cy = [], px, py
-            for _ in range(8):
-                cx, cy = cx + sx, cy + sy
-                wps.append((round(cx, 4), round(cy, 4)))
-            waypoints[str(i)] = wps
-        return waypoints
+            # Simple proportional controller toward goal
+            base_speed = min(1.0, dist * 0.3)
+            goal_angle = math.atan2(gy, gx)
+            turn = max(-1.0, min(1.0, goal_angle * 2.0))
+            left = base_speed - turn * 0.3
+            right = base_speed + turn * 0.3
+            # Constant wheel pair for all 8 steps
+            result[str(i)] = [(left, right)] * 8
+        return result
 
 
 class FastProjector(nn.Module):
@@ -112,27 +118,14 @@ class FastVLAPolicy:
                 goal_features=goal_feat.unsqueeze(0),
             )
 
-            positions = [
-                (agent_features[0, i, 0].item(), agent_features[0, i, 1].item())
-                for i in range(num_agents)
-            ]
-            headings = [
-                math.atan2(agent_features[0, i, 3].item(), agent_features[0, i, 2].item())
-                for i in range(num_agents)
-            ]
-
             result = {}
             for i in range(num_agents):
-                px, py = positions[i]
-                heading = headings[i]
-                wps = []
+                pairs = []
                 for j in range(self.chunk_size):
-                    local_dx = waypoints_tensor[0, i, j * 2].item()
-                    local_dy = waypoints_tensor[0, i, j * 2 + 1].item()
-                    gx = px + local_dx * math.cos(heading) - local_dy * math.sin(heading)
-                    gy = py + local_dx * math.sin(heading) + local_dy * math.cos(heading)
-                    wps.append((round(gx, 4), round(gy, 4)))
-                result[str(i)] = wps
+                    left = waypoints_tensor[0, i, j * 2].item()
+                    right = waypoints_tensor[0, i, j * 2 + 1].item()
+                    pairs.append((left, right))
+                result[str(i)] = pairs
             return result
 
 
@@ -399,28 +392,14 @@ class OpenVLAPolicy:
                 print(f"  DDIM sample[0,0,:8]: {waypoints_tensor[0,0,:8].tolist()}")
                 self._step_debug += 1
 
-            num_agents = features_dict.get("num_agents", 0)
-            positions = [
-                (agent_features[0, i, 0].item(), agent_features[0, i, 1].item())
-                for i in range(num_agents)
-            ]
-            headings = [
-                math.atan2(agent_features[0, i, 3].item(), agent_features[0, i, 2].item())
-                for i in range(num_agents)
-            ]
-
             result = {}
             for i in range(num_agents):
-                px, py = positions[i]
-                heading = headings[i]
-                wps = []
+                pairs = []
                 for j in range(self.chunk_size):
-                    local_dx = waypoints_tensor[0, i, j * 2].item()
-                    local_dy = waypoints_tensor[0, i, j * 2 + 1].item()
-                    gx = px + local_dx * math.cos(heading) - local_dy * math.sin(heading)
-                    gy = py + local_dx * math.sin(heading) + local_dy * math.cos(heading)
-                    wps.append((round(gx, 4), round(gy, 4)))
-                result[str(i)] = wps
+                    left = waypoints_tensor[0, i, j * 2].item()
+                    right = waypoints_tensor[0, i, j * 2 + 1].item()
+                    pairs.append((left, right))
+                result[str(i)] = pairs
             return result
 
 

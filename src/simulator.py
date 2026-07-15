@@ -266,9 +266,10 @@ class Simulator(b2ContactListener):
         for agent in self.agents:
             agent_body = self.b2_objects[agent.get_id()]
             agent_body.linearVelocity = agent.linear_velocity
-            agent_body.angle = atan2(agent.linear_velocity[1], agent.linear_velocity[0])
-            # uncomment here to make it become differential wheel
-            # self.set_agent_velocity(agent, agent_body)
+            if hasattr(agent, 'wheel_heading'):
+                agent_body.angle = agent.wheel_heading
+            else:
+                agent_body.angle = atan2(agent.linear_velocity[1], agent.linear_velocity[0])
 
         self.world.Step(self.TIME_STEP, 10, 10)
         """

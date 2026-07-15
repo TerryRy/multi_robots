@@ -1,9 +1,10 @@
 import random
+import math
 from math import cos, sin, atan2, pi as math_pi
 from vla.state_serializer import StateSerializer
-from vla.waypoint_tracker import WaypointTracker
 from vla.data_collector import DataCollector
 from vla.renderer import SimulatorRenderer
+from vla.wheel_kinematics import wheels_to_velocity, velocity_to_wheels
 from agents.agent_state_machine import AgentState
 
 DEBUG = False
@@ -21,13 +22,12 @@ class VLAController:
         self.dt = 1.0 / self.steps_per_sec
         self.use_mock = config.get("use_mock", True)
         self.collect_data = config.get("collect_data", False)
-        self.action_mode = config.get("action_mode", "continuous")
 
         self.serializer = StateSerializer()
         self.renderer = SimulatorRenderer(img_size=224)
-        self.trackers = {}
-        for agent in agents:
-            self.trackers[agent.id] = WaypointTracker(agent, self.dt)
+
+        # Wheel action buffers: model outputs 8 (left,right) pairs per agent
+        self._wheel_buffer = {agent.id: [] for agent in agents}
 
         self._model = None
         if self.use_mock:
@@ -57,14 +57,20 @@ class VLAController:
                 collect_every_n_steps=self.chunk_size,
                 renderer=self.renderer,
             )
+            self._prev_velocity = {agent.id: (0.0, 0.0) for agent in agents}
+            self._prev_heading = {agent.id: 0.0 for agent in agents}
+            self._wheel_history = {agent.id: [] for agent in agents}
+            self._pending_state = []
 
         self._step_counter = 0
         self._last_vla_call_step = -999
-        self._pos_history = {agent.id: [] for agent in agents}
-        self._pending_state = []
         self._mix = self._parse_mix(config.get("mix_ratios", "expert:1.0"))
         self._current_controller = None
         self._stride = config.get("stride", 1)
+
+    @property
+    def action_mode(self):
+        return "continuous"
 
     def _parse_mix(self, mix_str):
         result = {}
@@ -82,15 +88,42 @@ class VLAController:
                 return name
         return "expert"
 
+    def _record_wheel_velocities(self, simulator):
+        """Convert current linear_velocity to wheel velocities and record."""
+        for agent in self.agents:
+            vx, vy = agent.linear_velocity
+            prev_vx, prev_vy = self._prev_velocity.get(agent.id, (0.0, 0.0))
+            left, right = velocity_to_wheels(vx, vy, prev_vx, prev_vy, self.dt)
+            self._wheel_history[agent.id].append((left, right))
+            self._prev_velocity[agent.id] = (vx, vy)
+
+    def _apply_wheel_pair(self, agent, left, right):
+        """Apply a single (left,right) wheel pair to an agent's linear_velocity and heading."""
+        body = self.b2_objects.get(agent.id)
+        heading = body.angle if body else 0.0
+        vx, vy, omega = wheels_to_velocity(left, right, heading)
+        agent.linear_velocity = (vx, vy)
+        agent.speed = (vx * vx + vy * vy) ** 0.5
+        new_heading = heading + omega * self.dt
+        agent.wheel_heading = new_heading
+        if body:
+            body.angle = new_heading
+
+    def _refill_wheel_buffer(self, simulator):
+        """Run model inference and fill wheel buffers for all agents."""
+        text_prompt, features, agents_data = self.serializer.serialize(simulator)
+        vla_output = self._model.predict(text_prompt, features)
+        for agent in self.agents:
+            key = str(agent.id)
+            wheel_pairs = vla_output.get(key, [])
+            if len(wheel_pairs) == self.chunk_size:
+                self._wheel_buffer[agent.id] = list(wheel_pairs)
+
     def step(self, simulator):
         self._step_counter += 1
 
         if self.collect_data:
-            for agent in self.agents:
-                pos = agent.position
-                px = pos.x if hasattr(pos, 'x') else pos[0]
-                py = pos.y if hasattr(pos, 'y') else pos[1]
-                self._pos_history[agent.id].append((px, py))
+            self._record_wheel_velocities(simulator)
 
             if self._step_counter % self.chunk_size == 1:
                 self._current_controller = self._pick_controller()
@@ -99,11 +132,17 @@ class VLAController:
 
             if self._current_controller == "policy" and self._model is not None:
                 if self._step_counter % self.chunk_size == 1:
-                    self._run_policy_control(simulator)
-                self._apply_tracker_velocities()
+                    self._refill_wheel_buffer(simulator)
+                if self._wheel_buffer.get(self.agents[0].id):
+                    for agent in self.agents:
+                        buf = self._wheel_buffer[agent.id]
+                        if buf:
+                            left, right = buf.pop(0)
+                            self._apply_wheel_pair(agent, left, right)
             elif self._current_controller == "random":
                 self._run_random_control(simulator)
 
+            # Capture state every chunk_size steps
             if self._step_counter % self.chunk_size == 0:
                 text_prompt, features, agents_data = self.serializer.serialize(simulator)
                 img = self.renderer.render(simulator)
@@ -116,145 +155,66 @@ class VLAController:
                     "agent_ids": [ag["id"] for ag in agents_data],
                 })
 
+            # Extract wheel sequences from history
             while self._pending_state:
                 ps = self._pending_state[0]
                 start = ps["step"]
                 total_steps = self.chunk_size * self._stride
-                if len(self._pos_history[ps["agent_ids"][0]]) < start + total_steps + 1:
+                if len(self._wheel_history[ps["agent_ids"][0]]) < start + total_steps + 1:
                     break
                 self._pending_state.pop(0)
-                waypoints = {}
+                wheel_seq = {}
                 for aid in ps["agent_ids"]:
-                    hist = self._pos_history[aid]
+                    hist = self._wheel_history[aid]
                     raw = hist[start + 1:start + total_steps + 1]
-                    wps = [raw[i] for i in range(0, total_steps, self._stride)]
-                    if len(wps) == self.chunk_size:
-                        waypoints[str(aid)] = wps
-                if waypoints and self._data_collector is not None:
+                    samples = [raw[i] for i in range(0, total_steps, self._stride)]
+                    if len(samples) == self.chunk_size:
+                        wheel_seq[str(aid)] = samples
+                if wheel_seq and self._data_collector is not None:
                     self._data_collector.collect(
                         ps["text_prompt"], ps["features"], ps["agents_data"],
-                        waypoints, simulator=simulator,
+                        wheel_seq, simulator=simulator,
                     )
             return
 
+        # === NON-COLLECTION: normal VLA inference ===
         needs_inference = (self._step_counter - self._last_vla_call_step) >= self.chunk_size
-        needs_inference |= any(not t.has_waypoints() for t in self.trackers.values())
+        needs_inference |= any(len(buf) == 0 for buf in self._wheel_buffer.values())
 
         if needs_inference and self._model is not None:
-            text_prompt, features, agents_data = self.serializer.serialize(simulator)
-            vla_output = self._model.predict(text_prompt, features)
-            self._dispatch_waypoints(vla_output, agents_data, simulator)
+            self._refill_wheel_buffer(simulator)
 
             if self._step_counter <= 5 or self._step_counter % 60 == 0:
-                for ag in agents_data:
-                    trk = self.trackers.get(ag["id"])
-                    has_wps = trk.has_waypoints() if trk else False
-                    wp_str = ""
-                    if has_wps:
-                        wp = trk.waypoint_queue[0]
-                        d = ag["destination"]
-                        if d:
-                            dd = ((wp[0]-d[0])**2 + (wp[1]-d[1])**2)**0.5
-                            wp_str = f" 1st_wp=({wp[0]:.1f},{wp[1]:.1f}) dist2dest={dd:.1f}"
-                    print(f"  VLA: Agent {ag['id']} pos=({ag['position'][0]:.1f},{ag['position'][1]:.1f}) "
-                          f"dest={ag['destination']} has_wps={has_wps}{wp_str}")
+                for agent in self.agents:
+                    buf = self._wheel_buffer.get(agent.id, [])
+                    body = self.b2_objects.get(agent.id)
+                    pos = agent.position
+                    dest = agent.destination_location
+                    print(f"  VLA: Agent {agent.id} pos=({pos.x:.1f},{pos.y:.1f}) "
+                          f"dest=({dest.x:.1f},{dest.y:.1f}) wheel_buf={len(buf)}")
 
             self._last_vla_call_step = self._step_counter
 
+        # Apply wheel velocities each step
         for agent in self.agents:
-            tracker = self.trackers.get(agent.id)
-            if tracker is None:
-                continue
-
-            if hasattr(agent, 'state') and agent.state not in (AgentState.CRUISE, AgentState.PREQUEUE, AgentState.QUEUING):
-                agent.linear_velocity = (0.0, 0.0)
-                continue
-
-            if not tracker.has_waypoints():
-                continue
-
-            position = agent.position
-            if hasattr(position, 'x'):
-                from geometry import Point
-                position = Point(position.x, position.y)
-            vx, vy = tracker.compute_velocity(position)
-            agent.linear_velocity = (vx, vy)
-            agent.speed = (vx * vx + vy * vy) ** 0.5
-
-    def _run_policy_control(self, simulator):
-        text_prompt, features, agents_data = self.serializer.serialize(simulator)
-        vla_output = self._model.predict(text_prompt, features)
-        self._dispatch_waypoints(vla_output, agents_data, simulator)
-
-    def _apply_tracker_velocities(self):
-        for agent in self.agents:
-            tracker = self.trackers.get(agent.id)
-            if tracker is None:
-                continue
             if hasattr(agent, 'state') and agent.state not in (AgentState.CRUISE, AgentState.PREQUEUE, AgentState.QUEUING):
                 agent.linear_velocity = (0.0, 0.0)
                 agent.speed = 0.0
                 continue
-            if not tracker.has_waypoints():
+
+            buf = self._wheel_buffer.get(agent.id)
+            if not buf:
                 continue
-            position = agent.position
-            if hasattr(position, 'x'):
-                from geometry import Point
-                position = Point(position.x, position.y)
-            vx, vy = tracker.compute_velocity(position)
-            agent.linear_velocity = (vx, vy)
-            agent.speed = (vx * vx + vy * vy) ** 0.5
+
+            left, right = buf.pop(0)
+            self._apply_wheel_pair(agent, left, right)
 
     def _run_random_control(self, simulator):
         for agent in self.agents:
             import random as rnd
-            dest = agent.destination_location
-            if dest is not None and hasattr(dest, 'x'):
-                dx = dest.x - agent.position.x
-                dy = dest.y - agent.position.y
-                goal_angle = atan2(dy, dx)
-            else:
-                goal_angle = rnd.uniform(0, 2 * math_pi)
-            angle = goal_angle + rnd.uniform(-0.5, 0.5)
-            speed = rnd.uniform(0, agent.cruise_speed * 0.5)
-            agent.linear_velocity = (cos(angle) * speed, sin(angle) * speed)
-            agent.speed = speed
-
-    def _dispatch_waypoints(self, vla_output, agents_data, simulator):
-        num_agents = len(agents_data)
-        for i in range(min(num_agents, len(self.agents))):
-            aid = agents_data[i]["id"]
-            key = str(aid)
-            waypoints = vla_output.get(key, [])
-
-            if self.action_mode == "discrete":
-                waypoints = self._discrete_to_global(waypoints, agents_data[i])
-
-            global_waypoints = []
-            for step_i, wp in enumerate(waypoints):
-                if len(wp) < 2:
-                    continue
-                wx, wy = wp[0], wp[1]
-                global_waypoints.append((wx, wy))
-
-            if len(global_waypoints) == 0:
-                continue
-            self.trackers[aid].set_waypoints(global_waypoints)
-
-    def _discrete_to_global(self, tokens, agent_info, n_bins_x=25, n_bins_y=17,
-                             max_dx=0.6, max_dy=0.4):
-        waypoints = []
-        px, py = agent_info["position"]
-        heading = agent_info["angle_rad"]
-        for token in tokens:
-            idx_x = token // n_bins_y
-            idx_y = token % n_bins_y
-            dx = (idx_x / n_bins_x) * 2 * max_dx - max_dx
-            dy = (idx_y / n_bins_y) * 2 * max_dy - max_dy
-            gx = px + dx * cos(heading) - dy * sin(heading)
-            gy = py + dx * sin(heading) + dy * cos(heading)
-            waypoints.append((gx, gy))
-        return waypoints
+            left = rnd.uniform(-1.0, 1.0)
+            right = rnd.uniform(-1.0, 1.0)
+            self._apply_wheel_pair(agent, left, right)
 
     def flush_data(self):
         if self._data_collector is not None:

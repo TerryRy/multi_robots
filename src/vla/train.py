@@ -117,19 +117,14 @@ class VLADataset(Dataset):
             return
         filtered = []
         for i, sample in enumerate(self.samples):
-            text = sample.get("text_prompt", "")
-            if "Collisions:" in text and "AA=0 AO=0" not in text:
-                continue
             target = sample.get("target_action", {})
-            max_disp = 0.0
-            for aid, wps in target.items():
-                if len(wps) >= 2:
-                    dx = wps[-1][0] - wps[0][0]
-                    dy = wps[-1][1] - wps[0][1]
-                    disp = (dx*dx + dy*dy)**0.5
-                    if disp > max_disp:
-                        max_disp = disp
-            if max_disp < 0.01:
+            max_speed = 0.0
+            for aid, pairs in target.items():
+                for l, r in pairs:
+                    speed = (l*l + r*r)**0.5
+                    if speed > max_speed:
+                        max_speed = speed
+            if max_speed < 0.05:
                 continue
             filtered.append(i)
         if len(filtered) > max(10, len(self.samples) * 0.1):
@@ -514,16 +509,9 @@ def train(args):
             hidden = hidden[:, :n_active, :]
 
             target_flat = target_tensor.reshape(B, n_active, -1)
-            pos = agent_feat[:, :n_active, :2]
+
             cos_h = agent_feat[:, :n_active, 2:3]
             sin_h = agent_feat[:, :n_active, 3:4]
-            target_local = target_flat - pos.repeat(1, 1, 8)
-            tx = target_local[:, :, 0::2]
-            ty = target_local[:, :, 1::2]
-            local_x = tx * cos_h + ty * sin_h
-            local_y = -tx * sin_h + ty * cos_h
-            target_flat = torch.stack([local_x, local_y], dim=-1).reshape(B, n_active, -1)
-
             goal_global = agent_feat[:, :n_active, 12:14]
             goal_local_x = goal_global[:, :, 0:1] * cos_h + goal_global[:, :, 1:2] * sin_h
             goal_local_y = -goal_global[:, :, 0:1] * sin_h + goal_global[:, :, 1:2] * cos_h
@@ -536,13 +524,8 @@ def train(args):
                 sqrt_ab = alpha_bar[t].sqrt().view(B, 1, 1)
                 sqrt_1m_ab = (1 - alpha_bar[t]).sqrt().view(B, 1, 1)
                 pred_x0 = (x_t - sqrt_1m_ab * noise_pred) / (sqrt_ab + 1e-8)
-                pred_local = pred_x0.reshape(B, n_active, -1, 2)
-                wp_vec = pred_local[:, :, -1, :] - pred_local[:, :, 0, :]
-                goal_norm = goal_feat.norm(dim=-1, keepdim=True) + 1e-8
-                wp_norm = wp_vec.norm(dim=-1, keepdim=True) + 1e-8
-                cos_sim = (wp_vec * goal_feat).sum(-1) / (wp_norm.squeeze(-1) * goal_norm.squeeze(-1) + 1e-8)
-                loss = loss + 0.01 * (1.0 - cos_sim).clamp(min=0.0).mean()
-                wp_diffs = pred_local[:, :, 1:, :] - pred_local[:, :, :-1, :]
+                pred_wheels = pred_x0.reshape(B, n_active, -1, 2)
+                wp_diffs = pred_wheels[:, :, 1:, :] - pred_wheels[:, :, :-1, :]
                 loss = loss + 0.05 * (wp_diffs ** 2).mean()
 
             optimizer.zero_grad()
