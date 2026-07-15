@@ -42,6 +42,8 @@ class VLAController:
                 action_mode=self.action_mode, chunk_size=self.chunk_size,
             )
 
+        self._model.goal_scale = config.get("goal_scale", 1.0)
+
         if not self.use_mock and config.get("checkpoint_dir"):
             ckpt = config["checkpoint_dir"]
             print(f"Loading VLA checkpoint: {ckpt}")

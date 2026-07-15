@@ -459,6 +459,7 @@ def start_simulator(args, receive_q = None, send_q = None):
             "checkpoint_dir": cmd_args.vla_checkpoint,
             "mix_ratios": cmd_args.data_mix,
             "stride": cmd_args.vla_stride,
+            "goal_scale": cmd_args.vla_goal_scale,
         }
         simulator.vla_controller = VLAController(agents, simulator.b2_objects, vla_config)
         if cmd_args.vla_collect:
