@@ -66,8 +66,9 @@ class FastVLAPolicy:
         self.hidden_dim = hidden_dim
 
         self.feature_encoder = AgentFeatureEncoder(
-            input_dim=59, hidden_dim=512, output_dim=hidden_dim,
+            input_dim=60, hidden_dim=512, output_dim=hidden_dim,
         ).to(device)
+
 
         self.fast_lm = FastProjector(hidden_dim).to(device)
 
@@ -248,7 +249,7 @@ class OpenVLAPolicy:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
         self.feature_encoder = AgentFeatureEncoder(
-            input_dim=59, hidden_dim=512, output_dim=hidden_dim,
+            input_dim=60, hidden_dim=512, output_dim=hidden_dim,
         ).to(device=self.device, dtype=self.llm.dtype)
 
         self.diffusion_head = DiffusionActionHead(
