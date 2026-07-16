@@ -18,7 +18,7 @@
 #     stage: 1 | 2 | 3 | 4 | quick | fresh
 #     quick:  最小规模 OpenVLA-7B 训练, 验证管线不崩溃
 #     fresh:  从头训练, 不加载旧 checkpoint, 不混旧数据
-#             (默认 8 epochs, 默认 data/trajectories/stage_3)
+#             (默认 4 epochs, 默认 data/trajectories_wheel/stage_3)
 #
 # 示例:
 #   sbatch train.sh 1                        # Stage 1: 从头训练
@@ -68,7 +68,7 @@ case $STAGE in
     python vla/train.py \
         --model ${MODEL} --use-lora --lora-rank 128 \
         --data "${DATA_DIR}/stage_3" \
-        --epochs 8 --batch-size ${BATCH} --lr ${LR} \
+        --epochs 4 --batch-size ${BATCH} --lr ${LR} \
         --save-dir "${WEIGHT_DIR}/stage_fresh" \
         ${EXTRA_ARGS}
     ;;
