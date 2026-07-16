@@ -8,6 +8,8 @@ max_wheel_speed ≈ 2.0 m/s per wheel
 from math import cos, sin, atan2, pi
 
 WHEEL_BASE = 0.3
+MAX_WHEEL_SPEED = 3.0
+MAX_OMEGA = 4.0
 
 
 def wheels_to_velocity(left, right, heading):
@@ -21,6 +23,8 @@ def wheels_to_velocity(left, right, heading):
         (vx, vy, new_heading) — vx,vy are linear velocities,
         new_heading is heading updated by angular velocity * 1 sec
     """
+    left = max(-MAX_WHEEL_SPEED, min(MAX_WHEEL_SPEED, left))
+    right = max(-MAX_WHEEL_SPEED, min(MAX_WHEEL_SPEED, right))
     v_forward = (left + right) / 2.0
     omega = (right - left) / WHEEL_BASE
     vx = v_forward * cos(heading)
@@ -55,6 +59,7 @@ def velocity_to_wheels(vx, vy, prev_vx, prev_vy, dt):
         d_heading += 2 * pi
 
     omega = d_heading / max(dt, 1e-6)
+    omega = max(-MAX_OMEGA, min(MAX_OMEGA, omega))
     left = speed - omega * WHEEL_BASE / 2.0
     right = speed + omega * WHEEL_BASE / 2.0
     return left, right
