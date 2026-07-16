@@ -110,7 +110,7 @@ class VLADataset(Dataset):
 
     @property
     def feature_dim(self):
-        return self._feature_dim if self._feature_dim > 0 else 59
+        return self._feature_dim if self._feature_dim > 0 else 60
 
     def _filter_stationary(self):
         if len(self.samples) < 20:
@@ -119,11 +119,10 @@ class VLADataset(Dataset):
         for i, sample in enumerate(self.samples):
             target = sample.get("target_action", {})
             max_speed = 0.0
-            for aid, pairs in target.items():
-                for l, r in pairs:
-                    speed = (l*l + r*r)**0.5
-                    if speed > max_speed:
-                        max_speed = speed
+            for aid, steps in target.items():
+                for s in steps:
+                    if abs(s) > max_speed:
+                        max_speed = abs(s)
             if max_speed < 0.05:
                 continue
             filtered.append(i)
@@ -144,12 +143,7 @@ class VLADataset(Dataset):
 
         agents_feat = torch.tensor(record["features"]["agents"], dtype=torch.float32)
 
-        target_dim = 59
-        if agents_feat.shape[-1] < target_dim:
-            padding = torch.zeros(agents_feat.shape[0],
-                                  target_dim - agents_feat.shape[-1],
-                                  dtype=torch.float32)
-            agents_feat = torch.cat([agents_feat, padding], dim=-1)
+
 
         text_prompt = record["text_prompt"]
         target = record["target_action"]
@@ -361,7 +355,7 @@ def train(args):
         fast_lm = None
 
     # ---- MLP encoder + Diffusion head ----
-    encoder = AgentFeatureEncoder(input_dim=59, hidden_dim=512, output_dim=hidden_dim)
+    encoder = AgentFeatureEncoder(input_dim=60, hidden_dim=512, output_dim=hidden_dim)
     encoder = encoder.to(device=device, dtype=dtype)
 
     diffusion_head = DiffusionActionHead(
@@ -524,8 +518,7 @@ def train(args):
                 sqrt_ab = alpha_bar[t].sqrt().view(B, 1, 1)
                 sqrt_1m_ab = (1 - alpha_bar[t]).sqrt().view(B, 1, 1)
                 pred_x0 = (x_t - sqrt_1m_ab * noise_pred) / (sqrt_ab + 1e-8)
-                pred_wheels = pred_x0.reshape(B, n_active, -1, 2)
-                wp_diffs = pred_wheels[:, :, 1:, :] - pred_wheels[:, :, :-1, :]
+                wp_diffs = pred_x0[:, :, 1:] - pred_x0[:, :, :-1]
                 loss = loss + 0.05 * (wp_diffs ** 2).mean()
 
             optimizer.zero_grad()

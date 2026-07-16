@@ -6,33 +6,37 @@ from vla.diffusion_head import DiffusionActionHead, compute_diffusion_loss, ddim
 
 
 class MockVLAPolicy:
-    """Generates dummy wheel velocities toward the goal for testing."""
+    """Generates dummy wheel velocities for 10 wheels (5 robots)."""
     def __init__(self, action_mode="continuous"):
         self.action_mode = action_mode
+        self.chunk_size = 8
 
     def predict(self, text_prompt, features_dict, images=None):
         agents = features_dict.get("agents", [])
-        num_agents = features_dict.get("num_agents", 0)
+        num_wheels = features_dict.get("num_agents", 0)
         result = {}
-        for i in range(min(num_agents, len(agents))):
-            feat = agents[i]
-            dx, dy = feat[12], feat[13]
-            cos_h, sin_h = feat[2], feat[3]
-            # Goal in local frame
-            gx = dx * cos_h + dy * sin_h
-            gy = -dx * sin_h + dy * cos_h
+        # Process each robot pair: index 2i = left, 2i+1 = right
+        for i in range(0, num_wheels, 2):
+            if i + 1 >= len(agents):
+                break
+            feat_l = agents[i]        # left wheel (wheel_id=0)
+            feat_r = agents[i + 1]    # right wheel (wheel_id=1)
+            dx_l, dy_l = feat_l[12], feat_l[13]
+            cos_h, sin_h = feat_l[2], feat_l[3]
+            gx = dx_l * cos_h + dy_l * sin_h
+            gy = -dx_l * sin_h + dy_l * cos_h
             dist = math.sqrt(gx * gx + gy * gy)
             if dist < 0.1:
-                result[str(i)] = [(0.0, 0.0)] * 8
+                result[str(i)] = [0.0] * self.chunk_size
+                result[str(i + 1)] = [0.0] * self.chunk_size
                 continue
-            # Simple proportional controller toward goal
             base_speed = min(1.0, dist * 0.3)
             goal_angle = math.atan2(gy, gx)
             turn = max(-1.0, min(1.0, goal_angle * 2.0))
             left = base_speed - turn * 0.3
             right = base_speed + turn * 0.3
-            # Constant wheel pair for all 8 steps
-            result[str(i)] = [(left, right)] * 8
+            result[str(i)] = [left] * self.chunk_size
+            result[str(i + 1)] = [right] * self.chunk_size
         return result
 
 
@@ -119,13 +123,9 @@ class FastVLAPolicy:
             )
 
             result = {}
-            for i in range(num_agents):
-                pairs = []
-                for j in range(self.chunk_size):
-                    left = waypoints_tensor[0, i, j * 2].item()
-                    right = waypoints_tensor[0, i, j * 2 + 1].item()
-                    pairs.append((left, right))
-                result[str(i)] = pairs
+            for wi in range(num_agents):
+                speeds = [waypoints_tensor[0, wi, j].item() for j in range(self.chunk_size)]
+                result[str(wi)] = speeds
             return result
 
 
@@ -387,19 +387,15 @@ class OpenVLAPolicy:
             )
 
             if self._step_debug < 5:
-                print(f"  DDIM out: mean={waypoints_tensor.mean():.4f} std={waypoints_tensor.std():.4f} "
+                print(f"  DDIM out: shape={list(waypoints_tensor.shape)} "
+                      f"mean={waypoints_tensor.mean():.4f} std={waypoints_tensor.std():.4f} "
                       f"min={waypoints_tensor.min():.4f} max={waypoints_tensor.max():.4f}")
-                print(f"  DDIM sample[0,0,:8]: {waypoints_tensor[0,0,:8].tolist()}")
                 self._step_debug += 1
 
             result = {}
-            for i in range(num_agents):
-                pairs = []
-                for j in range(self.chunk_size):
-                    left = waypoints_tensor[0, i, j * 2].item()
-                    right = waypoints_tensor[0, i, j * 2 + 1].item()
-                    pairs.append((left, right))
-                result[str(i)] = pairs
+            for wi in range(num_agents):
+                speeds = [waypoints_tensor[0, wi, j].item() for j in range(self.chunk_size)]
+                result[str(wi)] = speeds
             return result
 
 

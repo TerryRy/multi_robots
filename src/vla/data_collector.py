@@ -32,13 +32,13 @@ class DataCollector:
         max_len = max(len(wp) for wp in expert_waypoints_dict.values())
         for aid, wps in expert_waypoints_dict.items():
             while len(wps) < max_len:
-                wps.append(wps[-1] if wps else (0.0, 0.0))
+                wps.append(wps[-1] if wps else 0.0)
 
         if self.action_mode == "discrete":
             target = self._discretize_waypoints(expert_waypoints_dict)
         else:
             target = {
-                str(aid): [(round(wx, 4), round(wy, 4)) for wx, wy in wps]
+                str(aid): [round(s, 4) for s in wps]
                 for aid, wps in expert_waypoints_dict.items()
             }
 
