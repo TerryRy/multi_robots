@@ -167,17 +167,13 @@ def inspect(args):
                 print(f"    pos=({pos_x:.1f},{pos_y:.1f}) heading={heading_deg:.0f}deg")
                 print(f"    goal=({goal_dx:.1f},{goal_dy:.1f}) dist={goal_dist:.1f} goal_angle={goal_angle_deg:.0f}deg")
                 print(f"    state={state_str} speed={speed:.2f}")
-                if wp_mag > 0.01:
-                    print(f"    waypoint displacement: {wp_mag:.3f} dir_local={math.degrees(compute_angle(wp_local_x, wp_local_y)):.0f}deg")
-                    print(f"    goal_local dir: {math.degrees(compute_angle(goal_local_x, goal_local_y)):.0f}deg")
-                    print(f"    direction error: {math.degrees(err):.1f}deg")
+                if mean_v > 0.01:
+                    print(f"    v_forward mean={mean_v:.3f}  omega mean={mean_w:.3f}")
                 else:
-                    print(f"    waypoint displacement: {wp_mag:.3f} (almost stationary)")
+                    print(f"    v_forward mean={mean_v:.3f} (stationary)")
                 print()
 
     # Summary
-    wp_mag_arr = np.array(wp_magnitudes)
-    err_arr = np.array(direction_errors)
     goal_dist_arr = np.array(goal_distances)
     speed_arr = np.array(speeds)
 
