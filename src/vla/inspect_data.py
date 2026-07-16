@@ -73,20 +73,20 @@ def inspect(args):
         return
 
     # Stats accumulators
-    wp_magnitudes = []
-    wp_angles = []
-    goal_angles = []
-    direction_errors = []
     goal_distances = []
     speeds = []
     states = Counter()
     collision_count = 0
     agent_counts = Counter()
-    has_moved_count = 0
     total_agent_samples = 0
-    step_uniformities = []
-    trajectory_curvatures = []
-    heading_changes = []
+    v_forward_all = []
+    omega_all = []
+    mean_vfwd = []
+    mean_omega = []
+    cruise_moving = 0
+    cruise_total = 0
+    stopped_still = 0
+    stopped_total = 0
     agent_fingerprints = {}  # agent_id → set of (pos_x, pos_y, goal_dx, goal_dy)
     agent_positions = {}     # agent_id → list of positions
 
@@ -133,69 +133,30 @@ def inspect(args):
             agent_positions[fid].append((pos_x, pos_y))
             goal_distances.append(goal_dist)
 
-            wps = target[sidx]
-            if len(wps) < 2:
+            pairs = target[sidx]
+            if len(pairs) < 2:
                 continue
 
-            first_wp = wps[0]
-            last_wp = wps[-1]
-            wp_dx = last_wp[0] - first_wp[0]
-            wp_dy = last_wp[1] - first_wp[1]
-            wp_mag = math.sqrt(wp_dx**2 + wp_dy**2)
-            wp_magnitudes.append(wp_mag)
+            # Extract v_forward and omega from (v, ω) pairs
+            v_vals = [p[0] for p in pairs]
+            w_vals = [p[1] for p in pairs]
+            v_forward_all.extend(v_vals)
+            omega_all.extend(w_vals)
 
-            if wp_mag > 0.01:
-                has_moved_count += 1
-                wp_angle_global = compute_angle(wp_dx, wp_dy)
-                # Rotate to local frame for direction vs goal
-                wp_local_x = wp_dx * math.cos(heading) + wp_dy * math.sin(heading)
-                wp_local_y = -wp_dx * math.sin(heading) + wp_dy * math.cos(heading)
-                wp_angles.append(compute_angle(wp_local_x, wp_local_y))
-                # Goal in local frame
-                goal_local_x = goal_dx * math.cos(heading) + goal_dy * math.sin(heading)
-                goal_local_y = -goal_dx * math.sin(heading) + goal_dy * math.cos(heading)
-                goal_angle_local = compute_angle(goal_local_x, goal_local_y)
-                goal_angles.append(goal_angle_local)
+            mean_v = sum(v_vals) / len(v_vals)
+            mean_w = sum(w_vals) / len(w_vals)
+            mean_vfwd.append(mean_v)
+            mean_omega.append(mean_w)
 
-                # Direction error (absolute angle diff)
-                err = abs(compute_angle(wp_local_x, wp_local_y) - compute_angle(goal_local_x, goal_local_y))
-                while err > math.pi:
-                    err = 2 * math.pi - err
-                direction_errors.append(math.degrees(err))
-
-                # --- Diversity checks ---
-                # 1. Step uniformity: std of 7 inter-waypoint distances
-                step_dists = []
-                for k in range(len(wps) - 1):
-                    sd = math.sqrt((wps[k+1][0]-wps[k][0])**2 + (wps[k+1][1]-wps[k][1])**2)
-                    step_dists.append(sd)
-                if len(step_dists) > 1:
-                    step_mean = sum(step_dists) / len(step_dists)
-                    step_var = sum((d - step_mean)**2 for d in step_dists) / len(step_dists)
-                    step_uniformities.append(step_var**0.5 / max(step_mean, 1e-8))
-                # 2. Curvature: max perpendicular distance from first-last line
-                ax, ay = first_wp[0], first_wp[1]
-                bx, by = last_wp[0], last_wp[1]
-                line_len = math.sqrt((bx-ax)**2 + (by-ay)**2)
-                if line_len > 0.01:
-                    max_curv = 0.0
-                    for k in range(1, len(wps) - 1):
-                        px, py = wps[k]
-                        cross = abs((bx-ax)*(py-ay) - (by-ay)*(px-ax))
-                        max_curv = max(max_curv, cross / line_len)
-                    trajectory_curvatures.append(max_curv)
-                # 3. Heading change: total angle swept over 7 steps
-                if len(wps) >= 3:
-                    total_turn = 0.0
-                    prev_angle = compute_angle(wps[1][0]-wps[0][0], wps[1][1]-wps[0][1])
-                    for k in range(2, len(wps)):
-                        cur_angle = compute_angle(wps[k][0]-wps[k-1][0], wps[k][1]-wps[k-1][1])
-                        diff = cur_angle - prev_angle
-                        while diff > math.pi: diff -= 2*math.pi
-                        while diff < -math.pi: diff += 2*math.pi
-                        total_turn += abs(diff)
-                        prev_angle = cur_angle
-                    heading_changes.append(math.degrees(total_turn))
+            # State-action consistency: CRUISE agents should have v > 0
+            if state_idx == 9:  # CRUISE
+                is_moving = 1 if mean_v > 0.3 else 0
+                cruise_moving += is_moving
+                cruise_total += 1
+            elif state_idx in (5, 6, 8):  # IDLE, LOADING, HALT
+                is_stopped = 1 if mean_v < 0.05 else 0
+                stopped_still += is_stopped
+                stopped_total += 1
 
             # Print first N records
             if ri < 5:
@@ -228,58 +189,37 @@ def inspect(args):
     for k in sorted(agent_counts):
         print(f"  {k} agents: {agent_counts[k]} records ({100*agent_counts[k]/len(all_records):.0f}%)")
 
-    print(f"\n[Waypoint Displacement] (first_wp → last_wp)")
-    print(f"  count={len(wp_mag_arr)}, moved={has_moved_count}/{total_agent_samples}")
-    print(f"  mean={wp_mag_arr.mean():.3f} median={np.median(wp_mag_arr):.3f} std={wp_mag_arr.std():.3f}")
-    print(f"  min={wp_mag_arr.min():.3f} 25%={np.percentile(wp_mag_arr,25):.3f} 75%={np.percentile(wp_mag_arr,75):.3f} max={wp_mag_arr.max():.3f}")
-    if len(wp_mag_arr) > 0:
-        zero_pct = 100 * (wp_mag_arr < 0.01).sum() / len(wp_mag_arr)
-        small_pct = 100 * ((wp_mag_arr >= 0.01) & (wp_mag_arr < 0.5)).sum() / len(wp_mag_arr)
-        ok_pct = 100 * (wp_mag_arr >= 0.5).sum() / len(wp_mag_arr)
-        print(f"  stationary (<0.01): {zero_pct:.0f}%  small (0.01-0.5): {small_pct:.0f}%  good (>=0.5): {ok_pct:.0f}%")
+    v_arr = np.array(v_forward_all)
+    w_arr = np.array(omega_all)
+    mv_arr = np.array(mean_vfwd)
 
-    print(f"\n[Direction Error] (waypoint vs goal, in degrees)")
-    if len(err_arr) > 0:
-        print(f"  count={len(err_arr)}")
-        print(f"  mean={err_arr.mean():.1f} median={np.median(err_arr):.1f} std={err_arr.std():.1f}")
-        print(f"  min={err_arr.min():.1f} 25%={np.percentile(err_arr,25):.1f} 75%={np.percentile(err_arr,75):.1f} max={err_arr.max():.1f}")
-        good_pct = 100 * (err_arr < 30).sum() / len(err_arr)
-        ok_pct = 100 * ((err_arr >= 30) & (err_arr < 90)).sum() / len(err_arr)
-        bad_pct = 100 * (err_arr >= 90).sum() / len(err_arr)
-        print(f"  good (<30deg): {good_pct:.0f}%  ok (30-90deg): {ok_pct:.0f}%  bad (>=90deg): {bad_pct:.0f}%")
-        wrong_dir = 100 * (err_arr > 90).sum() / len(err_arr)
-        print(f"  going away from goal (>90deg): {wrong_dir:.0f}%")
+    print(f"\n[v_forward Distribution] (forward speed per agent)")
+    print(f"  count={len(v_arr)}")
+    print(f"  mean={v_arr.mean():.3f} median={np.median(v_arr):.3f} std={v_arr.std():.3f}")
+    print(f"  min={v_arr.min():.3f} 25%={np.percentile(v_arr,25):.3f} 75%={np.percentile(v_arr,75):.3f} max={v_arr.max():.3f}")
+    stopped_v = 100 * (v_arr < 0.01).sum() / len(v_arr) if len(v_arr) > 0 else 0
+    print(f"  stopped (v<0.01): {stopped_v:.0f}%   moving (v>0.5): {100*(v_arr>0.5).sum()/len(v_arr):.0f}%")
+
+    print(f"\n[omega Distribution] (turning rate)")
+    print(f"  count={len(w_arr)}")
+    print(f"  mean={w_arr.mean():.3f} median={np.median(w_arr):.3f} std={w_arr.std():.3f}")
+    print(f"  min={w_arr.min():.3f} 25%={np.percentile(w_arr,25):.3f} 75%={np.percentile(w_arr,75):.3f} max={w_arr.max():.3f}")
+    straight_w = 100 * (abs(w_arr) < 0.1).sum() / len(w_arr) if len(w_arr) > 0 else 0
+    big_turn = 100 * (abs(w_arr) > 2.0).sum() / len(w_arr) if len(w_arr) > 0 else 0
+    print(f"  straight (|ω|<0.1): {straight_w:.0f}%   sharp turn (|ω|>2): {big_turn:.0f}%")
+
+    print(f"\n[State×Action Consistency]")
+    print(f"  CRUISE agents moving (v>0.3): {cruise_moving}/{cruise_total} ({100*cruise_moving/max(cruise_total,1):.0f}%)")
+    print(f"  IDLE/LOAD/HALT agents stopped (v<0.05): {stopped_still}/{stopped_total} ({100*stopped_still/max(stopped_total,1):.0f}%)")
 
     print(f"\n[Goal Distance]")
+    goal_dist_arr = np.array(goal_distances)
     print(f"  mean={goal_dist_arr.mean():.1f} median={np.median(goal_dist_arr):.1f}")
     print(f"  min={goal_dist_arr.min():.1f} max={goal_dist_arr.max():.1f}")
 
-    print(f"\n[Speed Distribution]")
+    print(f"\n[Speed Distribution] (feature[4])")
+    speed_arr = np.array(speeds)
     print(f"  mean={speed_arr.mean():.2f} median={np.median(speed_arr):.2f}")
-    if len(speed_arr) > 0:
-        stopped = 100 * (speed_arr < 0.01).sum() / len(speed_arr)
-        print(f"  stopped (<0.01): {stopped:.0f}%")
-
-    print(f"\n[Trajectory Diversity] (moving samples only)")
-    step_arr = np.array(step_uniformities)
-    curv_arr = np.array(trajectory_curvatures)
-    turn_arr = np.array(heading_changes)
-    if len(step_arr) > 0:
-        print(f"  Step CV (std/mean of 7 step distances):")
-        print(f"    median={np.median(step_arr):.3f} 25%={np.percentile(step_arr,25):.3f} 75%={np.percentile(step_arr,75):.3f}")
-        print(f"    CV=0 = perfectly uniform steps (constant speed)")
-        uniform_pct = 100 * (step_arr < 0.01).sum() / len(step_arr)
-        print(f"    uniform steps (CV<0.01): {uniform_pct:.0f}%")
-    if len(curv_arr) > 0:
-        print(f"  Curvature (max deviation from straight line):")
-        print(f"    median={np.median(curv_arr):.3f} 25%={np.percentile(curv_arr,25):.3f} 75%={np.percentile(curv_arr,75):.3f}")
-        straight_pct = 100 * (curv_arr < 0.01).sum() / len(curv_arr)
-        print(f"    perfectly straight (curv<0.01): {straight_pct:.0f}%")
-    if len(turn_arr) > 0:
-        print(f"  Total heading change over 8 waypoints (degrees):")
-        print(f"    median={np.median(turn_arr):.1f} 25%={np.percentile(turn_arr,25):.1f} 75%={np.percentile(turn_arr,75):.1f}")
-        no_turn_pct = 100 * (turn_arr < 0.5).sum() / len(turn_arr)
-        print(f"    no turning (<0.5deg): {no_turn_pct:.0f}%")
 
     print(f"\n[State Distribution]")
     for sidx in sorted(states.keys()):
@@ -296,10 +236,6 @@ def inspect(args):
         n_fp = len(agent_fingerprints[fid])
         n_total = len(agent_positions[fid])
         print(f"  {fid}: {n_fp} unique (pos,goal) combos out of {n_total} records")
-        if n_fp <= 3:
-            for fp in agent_fingerprints[fid]:
-                count = agent_positions[fid].count((fp[0], fp[1]))
-                print(f"    (x={fp[0]:.0f}, y={fp[1]:.0f}, gdx={fp[2]:.0f}, gdy={fp[3]:.0f})")
     fps_list = [len(agent_fingerprints[fid]) for fid in agent_fingerprints]
     if fps_list:
         avg_fp = sum(fps_list) / len(fps_list)
@@ -310,25 +246,16 @@ def inspect(args):
     print(f"\n{'='*60}")
     print(f"VERDICT")
     print(f"{'='*60}")
-    if len(err_arr) > 0 and len(wp_mag_arr) > 0:
-        median_err = np.median(err_arr)
-        median_mag = np.median(wp_mag_arr)
-        good_pct = 100 * (err_arr < 30).sum() / len(err_arr)
-        zero_pct = 100 * (wp_mag_arr < 0.01).sum() / len(wp_mag_arr)
-        print(f"  Direction error median: {median_err:.0f}deg ({good_pct:.0f}% good)")
-        print(f"  Waypoint magnitude median: {median_mag:.3f} ({zero_pct:.0f}% stationary)")
-        if len(step_arr) > 0:
-            step_cv_med = np.median(step_arr)
-            straight_pct = 100 * (curv_arr < 0.01).sum() / len(curv_arr) if len(curv_arr) > 0 else 0
-            print(f"  Step uniformity CV median: {step_cv_med:.3f}  Straight lines: {straight_pct:.0f}%")
-        if median_err < 20 and median_mag > 0.5:
-            print(f"  DATA QUALITY: GOOD")
-            if len(step_arr) > 0 and np.median(step_arr) < 0.01 and straight_pct > 90:
-                print(f"  DIVERSITY: POOR - all trajectories are identical straight lines")
-        elif median_err < 45 and median_mag > 0.1:
+    if len(v_arr) > 0:
+        median_v = np.median(v_arr)
+        cruise_ok = 100 * cruise_moving / max(cruise_total, 1)
+        print(f"  v_forward median: {median_v:.2f}  CRUISE moving: {cruise_ok:.0f}%")
+        if median_v > 0.5 and cruise_ok > 80:
+            print(f"  DATA QUALITY: GOOD - expert moves correctly")
+        elif median_v > 0.1 and cruise_ok > 50:
             print(f"  DATA QUALITY: ACCEPTABLE")
         else:
-            print(f"  DATA QUALITY: POOR - investigate further")
+            print(f"  DATA QUALITY: POOR - agent motion does not match state")
 
 
 if __name__ == "__main__":
