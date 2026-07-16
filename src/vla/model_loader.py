@@ -6,37 +6,29 @@ from vla.diffusion_head import DiffusionActionHead, compute_diffusion_loss, ddim
 
 
 class MockVLAPolicy:
-    """Generates dummy wheel velocities for 10 wheels (5 robots)."""
+    """Generates dummy (v_forward, omega) toward the goal for testing."""
     def __init__(self, action_mode="continuous"):
         self.action_mode = action_mode
         self.chunk_size = 8
 
     def predict(self, text_prompt, features_dict, images=None):
         agents = features_dict.get("agents", [])
-        num_wheels = features_dict.get("num_agents", 0)
+        num_agents = features_dict.get("num_agents", len(agents))
         result = {}
-        # Process each robot pair: index 2i = left, 2i+1 = right
-        for i in range(0, num_wheels, 2):
-            if i + 1 >= len(agents):
-                break
-            feat_l = agents[i]        # left wheel (wheel_id=0)
-            feat_r = agents[i + 1]    # right wheel (wheel_id=1)
-            dx_l, dy_l = feat_l[12], feat_l[13]
-            cos_h, sin_h = feat_l[2], feat_l[3]
-            gx = dx_l * cos_h + dy_l * sin_h
-            gy = -dx_l * sin_h + dy_l * cos_h
+        for i in range(min(num_agents, len(agents))):
+            feat = agents[i]
+            dx, dy = feat[12], feat[13]
+            cos_h, sin_h = feat[2], feat[3]
+            gx = dx * cos_h + dy * sin_h
+            gy = -dx * sin_h + dy * cos_h
             dist = math.sqrt(gx * gx + gy * gy)
             if dist < 0.1:
-                result[str(i)] = [0.0] * self.chunk_size
-                result[str(i + 1)] = [0.0] * self.chunk_size
+                result[str(i)] = [(0.0, 0.0)] * self.chunk_size
                 continue
-            base_speed = min(1.0, dist * 0.3)
+            v_fwd = min(1.0, dist * 0.3)
             goal_angle = math.atan2(gy, gx)
-            turn = max(-1.0, min(1.0, goal_angle * 2.0))
-            left = base_speed - turn * 0.3
-            right = base_speed + turn * 0.3
-            result[str(i)] = [left] * self.chunk_size
-            result[str(i + 1)] = [right] * self.chunk_size
+            omega = max(-2.0, min(2.0, goal_angle * 2.0))
+            result[str(i)] = [(v_fwd, omega)] * self.chunk_size
         return result
 
 
@@ -66,7 +58,7 @@ class FastVLAPolicy:
         self.hidden_dim = hidden_dim
 
         self.feature_encoder = AgentFeatureEncoder(
-            input_dim=60, hidden_dim=512, output_dim=hidden_dim,
+            input_dim=59, hidden_dim=512, output_dim=hidden_dim,
         ).to(device)
 
 
@@ -124,9 +116,13 @@ class FastVLAPolicy:
             )
 
             result = {}
-            for wi in range(num_agents):
-                speeds = [waypoints_tensor[0, wi, j].item() for j in range(self.chunk_size)]
-                result[str(wi)] = speeds
+            for i in range(num_agents):
+                pairs = []
+                for j in range(self.chunk_size):
+                    v = waypoints_tensor[0, i, j * 2].item()
+                    omega = waypoints_tensor[0, i, j * 2 + 1].item()
+                    pairs.append((v, omega))
+                result[str(i)] = pairs
             return result
 
 
@@ -249,7 +245,7 @@ class OpenVLAPolicy:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
         self.feature_encoder = AgentFeatureEncoder(
-            input_dim=60, hidden_dim=512, output_dim=hidden_dim,
+            input_dim=59, hidden_dim=512, output_dim=hidden_dim,
         ).to(device=self.device, dtype=self.llm.dtype)
 
         self.diffusion_head = DiffusionActionHead(
@@ -394,9 +390,13 @@ class OpenVLAPolicy:
                 self._step_debug += 1
 
             result = {}
-            for wi in range(num_agents):
-                speeds = [waypoints_tensor[0, wi, j].item() for j in range(self.chunk_size)]
-                result[str(wi)] = speeds
+            for i in range(num_agents):
+                pairs = []
+                for j in range(self.chunk_size):
+                    v = waypoints_tensor[0, i, j * 2].item()
+                    omega = waypoints_tensor[0, i, j * 2 + 1].item()
+                    pairs.append((v, omega))
+                result[str(i)] = pairs
             return result
 
 

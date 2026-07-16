@@ -255,7 +255,7 @@ class StateSerializer:
             'AgentState.PREQUEUE': [0, 0, 0, 0, 0, 1],
         }
 
-        max_wheels = 24
+        max_agents = 12
         max_ports = 20
         max_obstacles = 10
         max_neighbors = self.max_neighbors
@@ -267,8 +267,8 @@ class StateSerializer:
                 result.append(default)
             return result
 
-        encoded = []
-        for a in agents[:12]:
+        encoded_agents = []
+        for a in agents[:max_agents]:
             pos = a["position"]
             dest = a["destination"]
             dx_goal = dest[0] - pos[0] if dest else 0.0
@@ -280,7 +280,7 @@ class StateSerializer:
             if dest and dist_goal > 0.001:
                 goal_heading = atan2(dy_goal, dx_goal)
 
-            base = [
+            self_features = [
                 pos[0], pos[1],
                 cos(heading_rad), sin(heading_rad),
                 a["speed"],
@@ -313,13 +313,11 @@ class StateSerializer:
 
             port_features = self._nearest_port(pos, ports, heading_rad)
 
-            base_feat = base + neighbor_features + lidar_features + obstacle_features + port_features
-            # Two wheels per agent: wheel_id=0 (left), wheel_id=1 (right)
-            encoded.append(base_feat + [0.0])
-            encoded.append(base_feat + [1.0])
+            encoded = self_features + neighbor_features + lidar_features + obstacle_features + port_features
+            encoded_agents.append(encoded)
 
-        while len(encoded) < max_wheels:
-            encoded.append([0.0] * len(encoded[0]) if encoded else [0.0] * 60)
+        while len(encoded_agents) < max_agents:
+            encoded_agents.append([0.0] * len(encoded_agents[0]) if encoded_agents else [0.0] * 59)
 
         port_features = []
         for p in ports[:max_ports]:
@@ -337,11 +335,10 @@ class StateSerializer:
             obstacle_features.extend([0.0] * 4)
 
         return {
-            "num_agents": len(agents) * 2,
-            "num_wheels": len(agents) * 2,
+            "num_agents": len(agents),
             "num_ports": len(ports),
             "num_obstacles": len(obstacles),
-            "agents": encoded,
+            "agents": encoded_agents,
             "ports": port_features,
             "obstacles": obstacle_features,
         }

@@ -1,15 +1,12 @@
 import random
-import math
 from math import cos, sin, atan2, pi as math_pi
 from vla.state_serializer import StateSerializer
 from vla.data_collector import DataCollector
 from vla.renderer import SimulatorRenderer
-from vla.wheel_kinematics import wheels_to_velocity, velocity_to_wheels
+from vla.wheel_kinematics import motion_to_control, control_to_motion
 from agents.agent_state_machine import AgentState
 
 DEBUG = False
-NUM_AGENTS = 5
-NUM_WHEELS = NUM_AGENTS * 2
 
 
 class VLAController:
@@ -28,8 +25,10 @@ class VLAController:
         self.serializer = StateSerializer()
         self.renderer = SimulatorRenderer(img_size=224)
 
-        # Wheel buffers: model outputs 10 wheels × 8 steps = 80 values
-        self._wheel_buffers = {i: [] for i in range(NUM_WHEELS)}
+        # Action buffers: 8 (v_forward, omega) pairs per agent
+        self._action_buffer = {agent.id: [] for agent in agents}
+        # Track heading for omega computation during inference
+        self._heading = {agent.id: 0.0 for agent in agents}
 
         self._model = None
         if self.use_mock:
@@ -60,7 +59,9 @@ class VLAController:
                 renderer=self.renderer,
             )
             self._prev_velocity = {agent.id: (0.0, 0.0) for agent in agents}
-            self._wheel_history = {i: [] for i in range(NUM_WHEELS)}
+            self._prev_heading = {agent.id: 0.0 for agent in agents}
+            # Record history of (v_forward, omega) per agent
+            self._action_history = {agent.id: [] for agent in agents}
             self._pending_state = []
 
         self._step_counter = 0
@@ -89,58 +90,45 @@ class VLAController:
                 return name
         return "expert"
 
-    def _compute_wheel_speeds(self, agent, prev_vx, prev_vy):
-        """Convert current linear velocity to (left, right, mean_speed)."""
-        vx, vy = agent.linear_velocity
-        left, right = velocity_to_wheels(vx, vy, prev_vx, prev_vy, self.dt)
-        mean_speed = (vx * vx + vy * vy) ** 0.5
-        return left, right, mean_speed
+    def _record_action(self, simulator):
+        """Record current (v_forward, omega) from expert planner motion."""
+        for agent in self.agents:
+            vx, vy = agent.linear_velocity
+            prev_vx, prev_vy = self._prev_velocity.get(agent.id, (0.0, 0.0))
+            prev_h = self._prev_heading.get(agent.id)
+            v_fwd, omega = motion_to_control(vx, vy, prev_vx, prev_vy, self.dt, prev_h)
+            self._action_history[agent.id].append((v_fwd, omega))
+            self._prev_velocity[agent.id] = (vx, vy)
+            body = self.b2_objects.get(agent.id)
+            self._prev_heading[agent.id] = body.angle if body else atan2(vy, vx)
 
-    def _apply_wheel_pair(self, agent, left, right):
-        """Apply (left,right) wheel pair to agent and update heading."""
+    def _apply_action(self, agent, v_fwd, omega):
+        """Apply (v_forward, omega) to agent: set linear_velocity and heading."""
         body = self.b2_objects.get(agent.id)
         heading = body.angle if body else 0.0
-        vx, vy, omega = wheels_to_velocity(left, right, heading)
-        new_heading = heading + omega * self.dt
+        vx, vy, new_heading = control_to_motion(v_fwd, omega, heading, self.dt)
         agent.linear_velocity = (vx, vy)
-        agent.speed = (vx * vx + vy * vy) ** 0.5
+        agent.speed = abs(v_fwd)
         agent.wheel_heading = new_heading
         if body:
             body.angle = new_heading
 
-    def _refill_wheel_buffers(self, simulator):
-        """Run model inference and fill wheel buffers."""
+    def _refill_buffers(self, simulator):
+        """Run model inference and fill action buffers for all agents."""
         text_prompt, features, agents_data = self.serializer.serialize(simulator)
         vla_output = self._model.predict(text_prompt, features)
-        for wi in range(NUM_WHEELS):
-            key = str(wi)
-            wheel_steps = vla_output.get(key, [])
-            if len(wheel_steps) == self.chunk_size:
-                self._wheel_buffers[wi] = list(wheel_steps)
-
-    def _record_wheel_expert(self, simulator):
-        """Record expert planner (vx,vy) as wheel velocities."""
         for agent in self.agents:
-            prev_vx, prev_vy = self._prev_velocity.get(agent.id, (0.0, 0.0))
-            left, right, _ = self._compute_wheel_speeds(agent, prev_vx, prev_vy)
-            self._wheel_history[agent.id * 2].append(left)
-            self._wheel_history[agent.id * 2 + 1].append(right)
-            self._prev_velocity[agent.id] = agent.linear_velocity
-
-    def _pop_and_apply(self, agent):
-        """Pop one step from wheel buffers and apply to agent."""
-        left_buf = self._wheel_buffers.get(agent.id * 2)
-        right_buf = self._wheel_buffers.get(agent.id * 2 + 1)
-        if left_buf and right_buf and len(left_buf) > 0 and len(right_buf) > 0:
-            left = left_buf.pop(0)
-            right = right_buf.pop(0)
-            self._apply_wheel_pair(agent, left, right)
+            key = str(agent.id)
+            action_pairs = vla_output.get(key, [])
+            if len(action_pairs) == self.chunk_size:
+                # action_pairs is list of 8 (v, ω) pairs
+                self._action_buffer[agent.id] = list(action_pairs)
 
     def step(self, simulator):
         self._step_counter += 1
 
         if self.collect_data:
-            self._record_wheel_expert(simulator)
+            self._record_action(simulator)
 
             if self._step_counter % self.chunk_size == 1:
                 self._current_controller = self._pick_controller()
@@ -149,10 +137,12 @@ class VLAController:
 
             if self._current_controller == "policy" and self._model is not None:
                 if self._step_counter % self.chunk_size == 1:
-                    self._refill_wheel_buffers(simulator)
-                if self._wheel_buffers.get(0):
-                    for agent in self.agents:
-                        self._pop_and_apply(agent)
+                    self._refill_buffers(simulator)
+                for agent in self.agents:
+                    buf = self._action_buffer.get(agent.id)
+                    if buf:
+                        v_fwd, omega = buf.pop(0)
+                        self._apply_action(agent, v_fwd, omega)
             elif self._current_controller == "random":
                 self._run_random_control(simulator)
 
@@ -165,44 +155,44 @@ class VLAController:
                     "features": features,
                     "agents_data": agents_data,
                     "img": img,
-                    "wheel_ids": list(range(NUM_WHEELS)),
+                    "agent_ids": [ag["id"] for ag in agents_data],
                 })
 
+            # Extract (v_forward, omega) sequences from history
             while self._pending_state:
                 ps = self._pending_state[0]
                 start = ps["step"]
                 total_steps = self.chunk_size * self._stride
-                if len(self._wheel_history[0]) < start + total_steps + 1:
+                if len(self._action_history[ps["agent_ids"][0]]) < start + total_steps + 1:
                     break
                 self._pending_state.pop(0)
-                wheel_seq = {}
-                for wi in range(NUM_WHEELS):
-                    hist = self._wheel_history[wi]
+                action_seq = {}
+                for aid in ps["agent_ids"]:
+                    hist = self._action_history[aid]
                     raw = hist[start + 1:start + total_steps + 1]
                     samples = [raw[i] for i in range(0, total_steps, self._stride)]
                     if len(samples) == self.chunk_size:
-                        wheel_seq[str(wi)] = samples
-                if wheel_seq and self._data_collector is not None:
+                        action_seq[str(aid)] = samples
+                if action_seq and self._data_collector is not None:
                     self._data_collector.collect(
                         ps["text_prompt"], ps["features"], ps["agents_data"],
-                        wheel_seq, simulator=simulator,
+                        action_seq, simulator=simulator,
                     )
             return
 
         # === NON-COLLECTION: normal VLA inference ===
         needs_inference = (self._step_counter - self._last_vla_call_step) >= self.chunk_size
-        needs_inference |= any(len(self._wheel_buffers[wi]) == 0 for wi in range(NUM_WHEELS))
+        needs_inference |= any(len(buf) == 0 for buf in self._action_buffer.values())
 
         if needs_inference and self._model is not None:
-            self._refill_wheel_buffers(simulator)
+            self._refill_buffers(simulator)
 
             if self._step_counter <= 5 or self._step_counter % 60 == 0:
                 for agent in self.agents:
-                    buf_l = self._wheel_buffers.get(agent.id * 2, [])
-                    buf_r = self._wheel_buffers.get(agent.id * 2 + 1, [])
+                    buf = self._action_buffer.get(agent.id, [])
                     pos = agent.position
                     print(f"  VLA: Agent {agent.id} pos=({pos.x:.1f},{pos.y:.1f}) "
-                          f"wheel_buf={len(buf_l)},{len(buf_r)}")
+                          f"buf={len(buf)}")
 
             self._last_vla_call_step = self._step_counter
 
@@ -211,14 +201,19 @@ class VLAController:
                 agent.linear_velocity = (0.0, 0.0)
                 agent.speed = 0.0
                 continue
-            self._pop_and_apply(agent)
+
+            buf = self._action_buffer.get(agent.id)
+            if not buf:
+                continue
+            v_fwd, omega = buf.pop(0)
+            self._apply_action(agent, v_fwd, omega)
 
     def _run_random_control(self, simulator):
         for agent in self.agents:
             import random as rnd
-            left = rnd.uniform(-1.0, 1.0)
-            right = rnd.uniform(-1.0, 1.0)
-            self._apply_wheel_pair(agent, left, right)
+            v_fwd = rnd.uniform(0, 1.0)
+            omega = rnd.uniform(-2.0, 2.0)
+            self._apply_action(agent, v_fwd, omega)
 
     def flush_data(self):
         if self._data_collector is not None:

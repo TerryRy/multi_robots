@@ -55,7 +55,7 @@ class DiffusionActionHead(nn.Module):
             nn.Linear(d_model, d_model),
         )
 
-        self.input_proj = nn.Linear(chunk_size, d_model)
+        self.input_proj = nn.Linear(chunk_size * 2, d_model)
         self.cond_proj = nn.Linear(hidden_dim + self.goal_dim, d_model)
         self.time_proj = nn.Linear(d_model, d_model)
 
@@ -68,7 +68,7 @@ class DiffusionActionHead(nn.Module):
             nn.LayerNorm(d_model),
             nn.Linear(d_model, d_model),
             nn.ReLU(),
-            nn.Linear(d_model, chunk_size),
+            nn.Linear(d_model, chunk_size * 2),
         )
         nn.init.normal_(self.output_proj[-1].weight, mean=0.0, std=0.001)
         nn.init.zeros_(self.output_proj[-1].bias)
@@ -145,7 +145,7 @@ def ddim_sample(model, condition, ddim_steps=50, T=1000, eta=0.0, goal_features=
     alpha = 1 - beta
     alpha_bar = torch.cumprod(alpha, dim=0)
 
-    x = torch.randn(B, N, model.chunk_size, device=device)
+    x = torch.randn(B, N, model.chunk_size * 2, device=device)
 
     for i in range(len(timesteps) - 1):
         t_val = timesteps[i]
