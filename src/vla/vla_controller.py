@@ -191,7 +191,11 @@ class VLAController:
                 for agent in self.agents:
                     buf = self._action_buffer.get(agent.id, [])
                     pos = agent.position
+                    body = self.b2_objects.get(agent.id)
+                    heading = body.angle if body else 0.0
+                    first = buf[0] if buf else (0, 0)
                     print(f"  VLA: Agent {agent.id} pos=({pos.x:.1f},{pos.y:.1f}) "
+                          f"v={first[0]:.3f} ω={first[1]:.3f} heading={math.degrees(heading):.0f} "
                           f"buf={len(buf)}")
 
             self._last_vla_call_step = self._step_counter

@@ -10,7 +10,7 @@ from math import cos, sin, atan2, pi
 
 
 MAX_SPEED = 3.0
-MAX_OMEGA = 6.0
+MAX_OMEGA = 8.0  # rad/s; clips holonomic→differential artifacts (|ω|>90)
 
 
 def motion_to_control(vx, vy, prev_vx, prev_vy, dt, prev_heading=None):
@@ -37,6 +37,8 @@ def motion_to_control(vx, vy, prev_vx, prev_vy, dt, prev_heading=None):
         omega = d_heading / max(dt, 1e-6)
     else:
         omega = 0.0
+    # Clip omega to remove holonomic→differential artifacts (instant 90° = |ω|>90 rad/s)
+    omega = max(-MAX_OMEGA, min(MAX_OMEGA, omega))
     return speed, omega
 
 
