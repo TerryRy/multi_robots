@@ -10,7 +10,7 @@ from math import cos, sin, atan2, pi
 
 
 MAX_SPEED = 3.0
-MAX_OMEGA = 8.0  # rad/s; clips holonomic→differential artifacts (|ω|>90)
+OMEGA_SCALE = 0.1  # scale omega by 0.1 to balance v (0-3) and ω (-185~+185) dimensions
 
 
 def motion_to_control(vx, vy, prev_vx, prev_vy, dt, prev_heading=None):
@@ -37,23 +37,24 @@ def motion_to_control(vx, vy, prev_vx, prev_vy, dt, prev_heading=None):
         omega = d_heading / max(dt, 1e-6)
     else:
         omega = 0.0
-    # Clip omega to remove holonomic→differential artifacts (instant 90° = |ω|>90 rad/s)
-    omega = max(-MAX_OMEGA, min(MAX_OMEGA, omega))
-    return speed, omega
+    return speed, omega * OMEGA_SCALE
 
 
-def control_to_motion(v_forward, omega, heading, dt):
-    """Convert (v_forward, omega) back to linear velocity for Box2D.
+def control_to_motion(v_forward, omega_scaled, heading, dt):
+    """Convert scaled (v_forward, omega) back to linear velocity for Box2D.
+
+    omega_scaled is divided by OMEGA_SCALE; this function multiplies back.
 
     Args:
         v_forward: forward speed
-        omega: angular velocity (rad/s)
+        omega_scaled: scaled angular velocity (stored/trained value)
         heading: current robot heading (rad)
         dt: physics timestep
 
     Returns:
         (vx, vy, new_heading) for setting agent.linear_velocity and body.angle
     """
+    omega = omega_scaled / OMEGA_SCALE
     new_heading = heading + omega * dt
     vx = v_forward * cos(heading)
     vy = v_forward * sin(heading)
