@@ -43,7 +43,8 @@ def motion_to_control(vx, vy, prev_vx, prev_vy, dt, prev_heading=None):
 def control_to_motion(v_forward, omega_scaled, heading, dt):
     """Convert scaled (v_forward, omega) back to linear velocity for Box2D.
 
-    omega_scaled is divided by OMEGA_SCALE; this function multiplies back.
+    Uses midpoint heading for velocity direction to reduce drift
+    from heading change within the timestep.
 
     Args:
         v_forward: forward speed
@@ -56,6 +57,7 @@ def control_to_motion(v_forward, omega_scaled, heading, dt):
     """
     omega = omega_scaled / OMEGA_SCALE
     new_heading = heading + omega * dt
-    vx = v_forward * cos(heading)
-    vy = v_forward * sin(heading)
+    mid_heading = heading + omega * dt * 0.5
+    vx = v_forward * cos(mid_heading)
+    vy = v_forward * sin(mid_heading)
     return vx, vy, new_heading

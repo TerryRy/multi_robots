@@ -70,7 +70,7 @@ class DiffusionActionHead(nn.Module):
             nn.ReLU(),
             nn.Linear(d_model, chunk_size * 2),
         )
-        nn.init.normal_(self.output_proj[-1].weight, mean=0.0, std=0.001)
+        nn.init.xavier_uniform_(self.output_proj[-1].weight)
         nn.init.zeros_(self.output_proj[-1].bias)
 
     def forward(self, x_t, t, condition, goal_features=None):

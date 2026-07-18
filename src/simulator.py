@@ -252,11 +252,22 @@ class Simulator(b2ContactListener):
                 if self.vla_controller.collect_data:
                     self.__update_agent_state(agent, agent.ray_length_list)
                 else:
-                    func = agent.state_machine.next_state(agent)
-                    func(agent, agent.server)
-                    if agent.has_destination() and agent.goal_changed:
-                        agent.destination_location = agent.task.destination_location
-                        agent.goal_changed = False
+                    if agent.state == AgentState.CRUISE:
+                        if (hasattr(agent, 'task') and agent.task is not None
+                                and hasattr(agent.task, 'port')
+                                and agent.task.port is not None
+                                and agent.task.port.in_control_range(agent.position)):
+                            from agents.agent_state_machine import approaching
+                            approaching(agent, agent.server)
+                            if agent.has_destination() and agent.goal_changed:
+                                agent.destination_location = agent.task.destination_location
+                                agent.goal_changed = False
+                    else:
+                        func = agent.state_machine.next_state(agent)
+                        func(agent, agent.server)
+                        if agent.has_destination() and agent.goal_changed:
+                            agent.destination_location = agent.task.destination_location
+                            agent.goal_changed = False
             else:
                 self.__update_agent_state(agent, agent.ray_length_list)
 

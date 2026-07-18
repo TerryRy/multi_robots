@@ -106,6 +106,7 @@ class FastVLAPolicy:
             goal_local_x = goal_global[:, 0:1] * heading_cos + goal_global[:, 1:2] * heading_sin
             goal_local_y = -goal_global[:, 0:1] * heading_sin + goal_global[:, 1:2] * heading_cos
             goal_feat = torch.cat([goal_local_x, goal_local_y], dim=-1)
+            goal_feat = goal_feat / 40.0
             goal_feat = goal_feat * getattr(self, 'goal_scale', 1.0)
 
             waypoints_tensor = ddim_sample(
@@ -115,12 +116,16 @@ class FastVLAPolicy:
                 goal_features=goal_feat.unsqueeze(0),
             )
 
+            V_MEAN, V_STD = 1.5, 1.5
+            W_MEAN, W_STD = 0.0, 18.5
             result = {}
             for i in range(num_agents):
                 pairs = []
                 for j in range(self.chunk_size):
-                    v = waypoints_tensor[0, i, j * 2].item()
-                    omega = waypoints_tensor[0, i, j * 2 + 1].item()
+                    v_n = waypoints_tensor[0, i, j * 2].item()
+                    w_n = waypoints_tensor[0, i, j * 2 + 1].item()
+                    v = v_n * V_STD + V_MEAN
+                    omega = w_n * W_STD + W_MEAN
                     pairs.append((v, omega))
                 result[str(i)] = pairs
             return result
@@ -374,6 +379,7 @@ class OpenVLAPolicy:
             goal_local_x = goal_global[:, 0:1] * heading_cos + goal_global[:, 1:2] * heading_sin
             goal_local_y = -goal_global[:, 0:1] * heading_sin + goal_global[:, 1:2] * heading_cos
             goal_feat = torch.cat([goal_local_x, goal_local_y], dim=-1)
+            goal_feat = goal_feat / 40.0
             goal_feat = goal_feat * getattr(self, 'goal_scale', 1.0)
 
             waypoints_tensor = ddim_sample(
@@ -384,17 +390,25 @@ class OpenVLAPolicy:
             )
 
             if self._step_debug < 5:
-                print(f"  DDIM out: shape={list(waypoints_tensor.shape)} "
-                      f"mean={waypoints_tensor.mean():.4f} std={waypoints_tensor.std():.4f} "
-                      f"min={waypoints_tensor.min():.4f} max={waypoints_tensor.max():.4f}")
+                v_vals = waypoints_tensor[:, :, 0::2]
+                w_vals = waypoints_tensor[:, :, 1::2]
+                v_raw = v_vals * 1.5 + 1.5
+                w_raw = w_vals * 18.5
+                print(f"  DDIM norm: mean={waypoints_tensor.mean():.4f} std={waypoints_tensor.std():.4f} "
+                      f"v(raw) mean={v_raw.mean():.2f} max={v_raw.max():.2f} "
+                      f"ω(raw) mean={w_raw.mean():.2f} max={w_raw.max():.1f}")
                 self._step_debug += 1
 
+            V_MEAN, V_STD = 1.5, 1.5
+            W_MEAN, W_STD = 0.0, 18.5
             result = {}
             for i in range(num_agents):
                 pairs = []
                 for j in range(self.chunk_size):
-                    v = waypoints_tensor[0, i, j * 2].item()
-                    omega = waypoints_tensor[0, i, j * 2 + 1].item()
+                    v_n = waypoints_tensor[0, i, j * 2].item()
+                    w_n = waypoints_tensor[0, i, j * 2 + 1].item()
+                    v = v_n * V_STD + V_MEAN
+                    omega = w_n * W_STD + W_MEAN
                     pairs.append((v, omega))
                 result[str(i)] = pairs
             return result

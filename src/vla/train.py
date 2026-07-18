@@ -510,13 +510,25 @@ def train(args):
 
             target_flat = target_tensor.reshape(B, n_active, -1)
 
+            # Normalize target: v (0~3) and ω_scaled (-18.5~+18.5) have very different scales.
+            # Normalize both to zero-mean unit-variance per-dimension so the diffusion
+            # model learns both components equally.
+            v_vals = target_flat[:, :, 0::2]
+            w_vals = target_flat[:, :, 1::2]
+            v_mean, v_std = 1.5, 1.5
+            w_mean, w_std = 0.0, 18.5
+            v_norm = (v_vals - v_mean) / v_std
+            w_norm = (w_vals - w_mean) / w_std
+            target_norm = torch.stack([v_norm, w_norm], dim=-1).reshape(B, n_active, -1)
+
             cos_h = agent_feat[:, :n_active, 2:3]
             sin_h = agent_feat[:, :n_active, 3:4]
             goal_global = agent_feat[:, :n_active, 12:14]
             goal_local_x = goal_global[:, :, 0:1] * cos_h + goal_global[:, :, 1:2] * sin_h
             goal_local_y = -goal_global[:, :, 0:1] * sin_h + goal_global[:, :, 1:2] * cos_h
             goal_feat = torch.cat([goal_local_x, goal_local_y], dim=-1)
-            loss, noise_pred, x_t, t = compute_diffusion_loss(diffusion_head, target_flat, hidden, goal_features=goal_feat)
+            goal_feat = goal_feat / 40.0  # normalize to ~[0,1] from real map coords
+            loss, noise_pred, x_t, t = compute_diffusion_loss(diffusion_head, target_norm, hidden, goal_features=goal_feat)
 
             if noise_pred is not None and t is not None:
                 beta = _cosine_beta_schedule(1000).to(device)
