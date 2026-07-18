@@ -186,6 +186,18 @@ class VLAController:
         needs_inference |= any(len(buf) == 0 for buf in self._action_buffer.values())
 
         if needs_inference and self._model is not None:
+            # Initialize heading toward goal on first call (body.angle defaults to 0)
+            if self._last_vla_call_step < 0:
+                for agent in self.agents:
+                    body = self.b2_objects.get(agent.id)
+                    if body and body.angle == 0.0 and hasattr(agent, 'destination_location'):
+                        dest = agent.destination_location
+                        if dest is not None and hasattr(dest, 'x'):
+                            dx = dest.x - agent.position.x
+                            dy = dest.y - agent.position.y
+                            if abs(dx) > 0.01 or abs(dy) > 0.01:
+                                body.angle = atan2(dy, dx)
+
             self._refill_buffers(simulator)
 
             if self._step_counter <= 5 or self._step_counter % 60 == 0:
@@ -195,9 +207,26 @@ class VLAController:
                     body = self.b2_objects.get(agent.id)
                     heading = body.angle if body else 0.0
                     first = buf[0] if buf else (0, 0)
+                    dest = agent.destination_location
+                    if dest is not None and hasattr(dest, 'x') and hasattr(pos, 'x'):
+                        dx, dy = dest.x - pos.x, dest.y - pos.y
+                        goal_angle = math.degrees(atan2(dy, dx)) % 360
+                        heading_err = math.degrees(abs(atan2(dy, dx) - heading))
+                        while heading_err > 180: heading_err = 360 - heading_err
+                        dist = (dx*dx + dy*dy)**0.5
+                    else:
+                        goal_angle, heading_err, dist = 0, 0, 0
+                    # Predicted position after 1 step
+                    v_raw = first[0]
+                    w_raw = first[1]
+                    from vla.wheel_kinematics import OMEGA_SCALE
+                    ω_unscaled = w_raw / OMEGA_SCALE
+                    px = pos.x + v_raw * math.cos(heading)
+                    py = pos.y + v_raw * math.sin(heading)
                     print(f"  VLA: Agent {agent.id} pos=({pos.x:.1f},{pos.y:.1f}) "
-                          f"v={first[0]:.3f} ω={first[1]:.3f} heading={math.degrees(heading):.0f} "
-                          f"buf={len(buf)}")
+                          f"dest_angle={goal_angle:.0f}° err={heading_err:.0f}° "
+                          f"v={v_raw:.3f} ω={w_raw:.3f}({ω_unscaled:.1f}) "
+                          f"next≈({px:.1f},{py:.1f}) buf={len(buf)}")
 
             self._last_vla_call_step = self._step_counter
 
