@@ -537,7 +537,7 @@ def train(args):
                 pred_x0 = (x_t - sqrt_1m_ab * noise_pred) / (sqrt_ab + 1e-8)
                 pred_pairs = pred_x0.reshape(B, n_active, -1, 2)
                 wp_diffs = pred_pairs[:, :, 1:, :] - pred_pairs[:, :, :-1, :]
-                loss = loss + 0.05 * (wp_diffs ** 2).mean()
+                loss = loss + 10.0 * (wp_diffs ** 2).mean()
 
             optimizer.zero_grad()
             loss.backward()
