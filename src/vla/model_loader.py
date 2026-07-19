@@ -133,6 +133,7 @@ class FastVLAPolicy:
 class AgentFeatureEncoder(nn.Module):
     def __init__(self, input_dim=59, hidden_dim=512, output_dim=4096):
         super().__init__()
+        self.input_norm = nn.LayerNorm(input_dim)
         self.mlp = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
@@ -144,7 +145,8 @@ class AgentFeatureEncoder(nn.Module):
 
     def forward(self, agent_features):
         b, n, d = agent_features.shape
-        x = self.mlp(agent_features.reshape(b * n, d)).reshape(b, n, -1)
+        x = self.input_norm(agent_features.reshape(b * n, d)).reshape(b, n, d)
+        x = self.mlp(x.reshape(b * n, d)).reshape(b, n, -1)
         return self.norm(x)
 
 
