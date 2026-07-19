@@ -527,7 +527,6 @@ def train(args):
             goal_local_x = goal_global[:, :, 0:1] * cos_h + goal_global[:, :, 1:2] * sin_h
             goal_local_y = -goal_global[:, :, 0:1] * sin_h + goal_global[:, :, 1:2] * cos_h
             goal_feat = torch.cat([goal_local_x, goal_local_y], dim=-1)
-            goal_feat = goal_feat / 40.0  # normalize to ~[0,1] from real map coords
             loss, noise_pred, x_t, t = compute_diffusion_loss(diffusion_head, target_norm, hidden, goal_features=goal_feat)
 
             if noise_pred is not None and t is not None:

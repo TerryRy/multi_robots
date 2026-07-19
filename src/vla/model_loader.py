@@ -106,7 +106,6 @@ class FastVLAPolicy:
             goal_local_x = goal_global[:, 0:1] * heading_cos + goal_global[:, 1:2] * heading_sin
             goal_local_y = -goal_global[:, 0:1] * heading_sin + goal_global[:, 1:2] * heading_cos
             goal_feat = torch.cat([goal_local_x, goal_local_y], dim=-1)
-            goal_feat = goal_feat / 40.0
             goal_feat = goal_feat * getattr(self, 'goal_scale', 1.0)
 
             waypoints_tensor = ddim_sample(
@@ -379,7 +378,6 @@ class OpenVLAPolicy:
             goal_local_x = goal_global[:, 0:1] * heading_cos + goal_global[:, 1:2] * heading_sin
             goal_local_y = -goal_global[:, 0:1] * heading_sin + goal_global[:, 1:2] * heading_cos
             goal_feat = torch.cat([goal_local_x, goal_local_y], dim=-1)
-            goal_feat = goal_feat / 40.0
             goal_feat = goal_feat * getattr(self, 'goal_scale', 1.0)
 
             waypoints_tensor = ddim_sample(
