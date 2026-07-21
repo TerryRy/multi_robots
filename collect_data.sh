@@ -15,7 +15,8 @@
 #
 # 用法:
 #   sbatch collect_data.sh <stage> [sim_minutes] [extra_args...]
-#     stage: 1|2|3|4
+#     stage: 1robot|1|2|3|4
+#     1robot: 1 agent, 1 port, 10x10m
 #     extra_args 可覆盖 mix/checkpoint 等参数.
 #
 # 若需要 DAgger (policy mix), 追加:
@@ -39,6 +40,11 @@ EXTRA_ARGS="${@}"
 STRIDE=4
 
 case $STAGE in
+  1robot)
+    AGENTS=1; LOAD_PORTS=1; UNLOAD_PORTS=1
+    MAP_W=10; MAP_H=10
+    SIM_TIME=${SIM_TIME:-5}
+    ;;
   1)
     AGENTS=2; LOAD_PORTS=2; UNLOAD_PORTS=2
     MAP_W=20; MAP_H=12
@@ -60,7 +66,7 @@ case $STAGE in
     SIM_TIME=${SIM_TIME:-15}
     ;;
   *)
-    echo "Error: stage must be 1, 2, 3, or 4 (got: $STAGE)"
+    echo "Error: stage must be 1robot, 1, 2, 3, or 4 (got: $STAGE)"
     exit 1
     ;;
 esac

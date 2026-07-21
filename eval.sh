@@ -19,6 +19,7 @@
 #     sim_minutes: 评估时长 (默认 5, quick 默认 2)
 #
 # 示例:
+#   sbatch eval.sh 1robot                # 在 stage_1robot 上评估 5 分钟
 #   sbatch eval.sh 1                     # 在 stage_1 上评估 5 分钟
 #   sbatch eval.sh 2 10                  # 在 stage_2 上评估 10 分钟
 #   sbatch eval.sh 1 5 --agent 4 --port 4 4   # 自定义场景
@@ -58,13 +59,14 @@ MODEL="openvla/openvla-7b"
 
 # 根据 stage 确定默认 agent/port 数
 case $STAGE in
+  1robot) AGENTS=1; LOAD_P=1; UNLOAD_P=1; MAP_W=10; MAP_H=10 ;;
   1) AGENTS=2; LOAD_P=2; UNLOAD_P=2; MAP_W=20; MAP_H=12 ;;
   2) AGENTS=4; LOAD_P=4; UNLOAD_P=4; MAP_W=30; MAP_H=16 ;;
   3) AGENTS=5; LOAD_P=5; UNLOAD_P=5; MAP_W=40; MAP_H=20 ;;
   4) AGENTS=7; LOAD_P=7; UNLOAD_P=7; MAP_W=45; MAP_H=20 ;;
   quick) AGENTS=2; LOAD_P=2; UNLOAD_P=2; MAP_W=20; MAP_H=12 ;;
   fresh) AGENTS=5; LOAD_P=5; UNLOAD_P=5; MAP_W=40; MAP_H=20 ;;
-  *) echo "Error: stage must be 1-4, quick, or fresh"; exit 1 ;;
+  *) echo "Error: stage must be 1robot, 1-4, quick, or fresh"; exit 1 ;;
 esac
 
 CKPT_DIR="${WEIGHT_DIR}/stage_${STAGE}"

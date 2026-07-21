@@ -15,12 +15,14 @@
 # 不需要 HF Token (读取本地 ~/ip/models/openvla-7b)
 #
 #   sbatch train.sh <stage> [extra_args...]
-#     stage: 1 | 2 | 3 | 4 | quick | fresh
+#     stage: 1robot | 1 | 2 | 3 | 4 | quick | fresh
+#     1robot: 1 agent 单场景, 独立路径, 不影响其他 stage
 #     quick:  最小规模 OpenVLA-7B 训练, 验证管线不崩溃
 #     fresh:  从头训练, 不加载旧 checkpoint, 不混旧数据
 #             (默认 12 epochs, 默认 data/trajectories_wheel/stage_3)
 #
 # 示例:
+#   sbatch train.sh 1robot                   # 1 robot 场景
 #   sbatch train.sh 1                        # Stage 1: 从头训练
 #   sbatch train.sh 2                        # Stage 2: 加载 stage_1
 #   sbatch train.sh 3 --epochs 30 --lr 5e-5  # 自定义参数
@@ -62,6 +64,16 @@ LR=3e-5
 BASE_ARGS="--model ${MODEL} --use-lora --lora-rank 128 --epochs ${EPOCHS} --batch-size ${BATCH} --lr ${LR}"
 
 case $STAGE in
+  1robot)
+    echo "========== 1Robot mode: train on stage_1robot data from scratch =========="
+    rm -rf "${WEIGHT_DIR}/stage_1robot"
+    python vla/train.py \
+        --model ${MODEL} --use-lora --lora-rank 128 \
+        --data "${DATA_DIR}/stage_1robot" \
+        --epochs 12 --batch-size ${BATCH} --lr ${LR} \
+        --save-dir "${WEIGHT_DIR}/stage_1robot" \
+        ${EXTRA_ARGS}
+    ;;
   fresh)
     echo "========== Fresh mode: train on stage_3 data from scratch (no old checkpoint, no data mix) =========="
     rm -rf "${WEIGHT_DIR}/stage_fresh"
